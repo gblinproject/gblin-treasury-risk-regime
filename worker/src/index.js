@@ -1115,6 +1115,11 @@ async function readResource(uri, env) {
         attestation: { url: `${SITE}/api/x402/attestation`, price_usdc: 0.003, network: "eip155:8453", protocol: "x402" },
         seal: { url: `${SITE}/api/x402/seal`, price_usdc: 0.01, network: "eip155:8453", protocol: "x402" },
       },
+      // Misurato il 22/08/2026 sul primo sigillo pagato con prova di pagamento: leggendo
+      // /v1/receipt/<indice> subito dopo il sigillo si puo' ricevere 404 per qualche secondo.
+      // Non e' un guasto ed e' innocuo — il sigillo RESTITUISCE gia' la ricevuta completa nella
+      // sua risposta — ma un client che sigilla e poi rilegge deve saperlo e ritentare.
+      read_after_seal: "The seal response already contains the full receipt. The read endpoints (/v1/receipt/:i, /v1/verify/:i, /log/*) are backed by an eventually consistent store and may lag a few seconds behind a just-written leaf: retry on 404 instead of treating it as a lost seal.",
       kill_switch: "env MCP_DISABLED => HTTP 503 on every request",
     };
     case "gblin://keys": {
