@@ -96,8 +96,19 @@ export const PROVENANCE_LEVELS = ["self-reported", "server-observed", "externall
 // cannot self-declare "server-observed".
 export function provenanceFor(payload) {
   const self = !!(payload && payload.by === "operator");
-  return { ...PROVENANCE, level: self ? "server-observed" : "self-reported",
+  const out = { ...PROVENANCE, level: self ? "server-observed" : "self-reported",
     meaning: self ? "This server performed the sealed action itself and sealed it (payload.by = \"operator\", set server-side only); the log proves the record and its time, and meta carries the on-chain tx of that action." : PROVENANCE.meaning };
+  // La prova del PAGAMENTO e' un asse diverso da quella dell'AZIONE, e non va confusa con essa:
+  // un sigillo pagato resta self-reported nei suoi hash. Nato dal rilievo di un terzo (22/08/2026):
+  // avevamo affermato in privato un pagamento che il record non portava. Ora o lo porta o non si dice.
+  if (payload && payload.payment) {
+    out.payment_evidence = {
+      level: "server-observed",
+      meaning: "The resource server verified an x402 payment authorization for this seal before writing it; payload.payment records what the server saw, not what the caller claimed. The sealed ACTION and its hashes remain self-reported.",
+      find_settlement_onchain: "USDC on Base emits AuthorizationUsed(authorizer, nonce) in the settlement transaction: search that event for payload.payment.payer and payload.payment.authorization_nonce to find the transaction independently. We do not write the transaction hash here because the server does not know it at seal time.",
+    };
+  }
+  return out;
 }
 export const PROVENANCE = {
   level: "self-reported",
@@ -338,7 +349,7 @@ export function validateSealInput(body) {
     output_hash: body.output_hash != null ? s(body.output_hash).replace(/^0x/, "").toLowerCase() : null };
 }
 
-export async function sealAction(env, input, { demo = false, operator = false } = {}) {
+export async function sealAction(env, input, { demo = false, operator = false, payment = null } = {}) {
   if (!env.COHERENCE) return { status: 503, error: "log storage unavailable" };
   if (!env.RLOG_KEY) return { status: 503, error: "log key not armed" };
   const v = validateSealInput(input);
@@ -351,6 +362,7 @@ export async function sealAction(env, input, { demo = false, operator = false } 
     input_hash: v.input_hash, output_hash: v.output_hash, meta: v.meta,
   };
   if (operator) payload.by = "operator"; // solo il percorso interno puo' impostarlo
+  if (payment) payload.payment = payment;  // idem: cio' che il resource server HA VISTO del pagamento
   if (demo) payload.demo = true;
   const canonical = canonicalize(payload);
   const leaf = await leafHash(te.encode(canonical));
@@ -390,7 +402,7 @@ export async function sealAction(env, input, { demo = false, operator = false } 
       anchor: await anchorInfo(env, N),
       provenance: provenanceFor(payload),
       verify: "offline: see verify-receipt.mjs in github.com/gblinproject/gblin-treasury-risk-regime (zero deps)",
-      note: "Evidence of existence and time in a signed append-only log, root anchored daily on Base (EAS) — NOT a compliance certificate and NOT an endorsement of the content. The action/agent_id/tool/meta strings you send are published in the public log: put identifiers there, never secrets; input/output go in as hashes only.",
+      note: "Evidence of existence and time in a signed append-only log, root anchored daily on Base (EAS) — NOT a compliance certificate and NOT an endorsement of the content. The action/agent_id/tool/meta strings you send are published in the public log: put identifiers there, never secrets; input/output go in as hashes only. For a PAID seal the record also carries what this server saw of the payment (payer address, amount, authorization nonce): that too is public, and it is on-chain public already.",
     },
   };
 }

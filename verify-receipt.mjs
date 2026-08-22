@@ -94,4 +94,16 @@ ok("checkpoint (C2SP signed note) valid and consistent with receipt");
 
 console.log(`\nPASS — receipt #${receipt.index} verified offline.`);
 console.log(`Action: ${receipt.payload.action}${receipt.payload.demo ? " (DEMO)" : ""} · ${receipt.payload.ts}`);
+// Il pagamento, se il record lo porta. E' l'unica parte OSSERVATA dal server: gli hash
+// dell'azione restano dichiarati da chi ha sigillato. Il nonce serve a ritrovare da soli il
+// regolamento on-chain (USDC su Base emette AuthorizationUsed(authorizer, nonce)).
+const pay = receipt.payload.payment;
+if (pay) {
+  const amt = pay.amount ? `${pay.amount} units of ${pay.asset ?? "the asset"}` : "amount not recorded";
+  console.log(`Payment observed by the server: ${amt}${pay.payer ? ` from ${pay.payer}` : ""}${pay.network ? ` on ${pay.network}` : ""}.`);
+  if (pay.authorization_nonce && pay.payer) {
+    console.log(`  Find the settlement yourself: USDC AuthorizationUsed(authorizer=${pay.payer}, nonce=${pay.authorization_nonce}).`);
+  }
+  console.log("  This is evidence about the PAYMENT only. The sealed action and its hashes remain self-reported.");
+}
 console.log("Reminder: a seal proves existence and time. It does not certify the content.");

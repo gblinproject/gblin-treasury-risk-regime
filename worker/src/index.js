@@ -1257,6 +1257,41 @@ function json(body, status = 200, extra = {}) {
   });
 }
 
+// Cosa il resource server ha VISTO del pagamento x402 di questo sigillo, normalizzato e
+// limitato. Non e' il chiamante a dirlo: il webapp lo estrae dall'header x-payment che il
+// middleware ha appena verificato, e ce lo passa qui in base64.
+//
+// Perche' NON c'e' l'hash della transazione: al momento del sigillo il server non lo conosce
+// (il facilitator regola attorno all'handler). C'e' invece il nonce dell'autorizzazione
+// EIP-3009, che e' meglio di una nostra parola: USDC su Base emette
+// AuthorizationUsed(authorizer, nonce) nella transazione di regolamento, quindi chiunque
+// puo' RITROVARE quella transazione da solo partendo da payer + nonce. Verificato sul
+// regolamento del sigillo pagato del 21/08 (tx 0xf948f708..., due log: AuthorizationUsed e Transfer).
+const HEXADDR = /^0x[0-9a-fA-F]{40}$/;
+const HEX32 = /^0x[0-9a-fA-F]{64}$/;
+function parsePaymentObservation(header) {
+  if (!header) return null;
+  let o;
+  try { o = JSON.parse(atob(header)); } catch { return null; }
+  if (!o || typeof o !== "object") return null;
+  const str = (x, max = 80) => (typeof x === "string" && x.length <= max ? x : undefined);
+  const out = {
+    observed_by: "gblin.digital resource server",
+    scheme: str(o.scheme, 24),
+    network: str(o.network, 32),
+    asset: HEXADDR.test(o.asset || "") ? o.asset.toLowerCase() : undefined,
+    amount: typeof o.amount === "string" && /^\d{1,32}$/.test(o.amount) ? o.amount : undefined,
+    payer: HEXADDR.test(o.payer || "") ? o.payer.toLowerCase() : undefined,
+    pay_to: HEXADDR.test(o.pay_to || "") ? o.pay_to.toLowerCase() : undefined,
+    authorization_nonce: HEX32.test(o.authorization_nonce || "") ? o.authorization_nonce.toLowerCase() : undefined,
+    payload_sha256: /^[0-9a-f]{64}$/.test(o.payload_sha256 || "") ? o.payload_sha256 : undefined,
+  };
+  for (const k of Object.keys(out)) if (out[k] === undefined) delete out[k];
+  // Serve almeno un aggancio verificabile da fuori, altrimenti e' rumore e non si scrive.
+  if (!out.payer && !out.payload_sha256) return null;
+  return out;
+}
+
 export default {
   async fetch(request, env) {
     if (env.MCP_DISABLED === "true") {
@@ -1372,7 +1407,11 @@ export default {
       if (!env.CATALOG_TOKEN || tok !== env.CATALOG_TOKEN) return json({ error: "unauthorized" }, 401);
       let body; try { body = await request.json(); } catch { return json({ error: "invalid JSON" }, 400); }
       const operator = url.searchParams.get("operator") === "1"; // solo per i sigilli delle NOSTRE azioni
-      const r = await sealAction(env, body, { demo: false, operator });
+      // Osservazione del pagamento: arriva SOLO da questo header, mai dal corpo — cosi' il
+      // chiamante non puo' scriversi da solo un pagamento che non ha fatto. Il percorso e'
+      // gia' autenticato col CATALOG_TOKEN, quindi a metterlo e' il nostro resource server.
+      const payment = parsePaymentObservation(request.headers.get("x-gblin-payment-observed"));
+      const r = await sealAction(env, body, { demo: false, operator, payment });
       return json(r.status === 200 ? r.receipt : { error: r.error }, r.status, { "cache-control": "no-store" });
     }
     if (url.pathname === "/v1/seal-demo" && request.method === "POST") {
