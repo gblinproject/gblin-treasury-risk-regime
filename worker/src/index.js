@@ -1264,6 +1264,23 @@ export default {
     }
 
     const url = new URL(request.url);
+
+    // Sfida x402 anonima servita dal bordo (vedi x402-challenge.mjs). Ci arriva riscritta da
+    // una Project Routing Rule di Vercel quando la richiesta NON porta pagamento. Vercel,
+    // riscrivendo verso un URL esterno, inoltra il PERCORSO ORIGINALE, non quello scritto
+    // nella destinazione: rispondiamo sia sul nostro percorso sia su quello della webapp.
+    // (Scoperto il 22/08 con un 404 del Worker che sembrava di Vercel: corpo nostro, 46 byte.)
+    //
+    // STA QUI IN CIMA di proposito, PRIMA del ramo OPTIONS e PRIMA del rate-limit: la regola
+    // di Vercel non sa filtrare per metodo (le condizioni sono solo Header/Cookie/Query/Host),
+    // quindi ogni metodo passa di qui e deve rispondere quello che rispondeva l'origin —
+    // origin che serve la sfida anche a OPTIONS, PUT e DELETE. E un crawler oltre i 60/min
+    // deve vedere la sfida, non un 429 che l'origin non avrebbe mai dato.
+    {
+      const edge = x402StaticChallenge(request);
+      if (edge) return edge;
+    }
+
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
 
     const ip = request.headers.get("cf-connecting-ip") || "unknown";
@@ -1390,14 +1407,6 @@ export default {
     // Note d'incidente della Coerenza: /coherence/incident/<AAAA-MM-GG>
     if (url.pathname.startsWith("/coherence/incident/") && request.method === "GET") {
       return incidentResponse(url.pathname.split("/").pop());
-    }
-    // Vercel, riscrivendo verso un URL esterno, inoltra il PERCORSO ORIGINALE della
-    // richiesta, non quello scritto nella destinazione. Quindi rispondiamo sia sul nostro
-    // percorso sia su quello pubblico della webapp. (Scoperto il 22/08 con un 404 del Worker
-    // che sembrava un 404 di Vercel: il corpo era il nostro, 46 byte.)
-    if ((request.method === "GET" || request.method === "HEAD")) {
-      const edge = x402StaticChallenge(request);
-      if (edge) return edge;
     }
     if (url.pathname === "/log/checkpoint" && request.method === "GET") {
       const st = await rlogStatus(env);
