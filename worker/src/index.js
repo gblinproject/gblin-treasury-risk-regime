@@ -1395,9 +1395,9 @@ export default {
     // richiesta, non quello scritto nella destinazione. Quindi rispondiamo sia sul nostro
     // percorso sia su quello pubblico della webapp. (Scoperto il 22/08 con un 404 del Worker
     // che sembrava un 404 di Vercel: il corpo era il nostro, 46 byte.)
-    if ((url.pathname === "/x402/attestation" || url.pathname === "/api/x402/attestation" || url.pathname === "/prova-bordo-x402")
-        && (request.method === "GET" || request.method === "HEAD")) {
-      return x402StaticChallenge(request);
+    if ((request.method === "GET" || request.method === "HEAD")) {
+      const edge = x402StaticChallenge(request);
+      if (edge) return edge;
     }
     if (url.pathname === "/log/checkpoint" && request.method === "GET") {
       const st = await rlogStatus(env);
