@@ -1363,9 +1363,16 @@ export default {
         checkpoint_valid: !!byName.checkpoint, verifier_key_valid: !!byName.verifier_key,
         anchor_found: a.anchor_found, anchor_root_matches: a.anchor_root_matches, anchored_tree_size: a.anchored_tree_size, anchor_tx: a.anchor_tx,
         root_covers_this_receipt: a.anchor_found && idx < a.anchored_tree_size,
+        // Due assi DISTINTI, e vanno letti nello stesso posto della ricevuta.
+        // Prima del 23/08/2026 qui usciva il solo provenance_level: chi apriva
+        // questo endpoint leggeva "self-reported" su una ricevuta che altrove
+        // presentavamo come server-observed sul PAGAMENTO. Rilievo di un terzo.
         provenance_level: r.receipt.provenance.level, demo: !!r.receipt.payload.demo,
+        payment_evidence_level: r.receipt.provenance.payment_evidence ? r.receipt.provenance.payment_evidence.level : "none",
+        payment_evidence: r.receipt.provenance.payment_evidence || null,
         valid: v.valid, errors: v.errors,
         note: "Cryptographic checks are recomputed server-side from the receipt alone (same math as the receipts.verify tool / verify-receipt.mjs); anchor_root_matches recomputes the root at anchored_tree_size from the log and compares it with the root written on Base. Trust model: re-run verify-receipt.mjs offline if you do not trust this server.",
+        provenance_note: "Two separate axes. provenance_level describes the sealed ACTION (self-reported unless this server performed it itself). payment_evidence_level describes whether this server verified an x402 payment authorization before writing the seal; \"none\" means the receipt carries no payment evidence. A paid seal is not a verified seal: a server-observed payment never upgrades the action's hashes.",
       }, 200, { "cache-control": "public, max-age=60" });
     }
     if (url.pathname === "/coherence" && request.method === "GET") {
