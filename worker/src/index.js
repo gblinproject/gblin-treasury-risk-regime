@@ -1426,6 +1426,20 @@ export default {
       const r = await sealAction(env, body, { demo: false, operator, payment });
       return json(r.status === 200 ? r.receipt : { error: r.error }, r.status, { "cache-control": "no-store" });
     }
+    // Rotte POST-only che PUBBLICHIAMO: se le si interroga col metodo sbagliato devono dire
+    // "metodo sbagliato", non "non esiste". Prima cadevano nel 404 catch-all in fondo, e un crawler
+    // che sonda in GET si sentiva rispondere che la rotta non c'e' (corretto il 23/08/2026).
+    // Le rotte /internal/* e /coherence/{genesis,seal} restano volutamente FUORI da questa lista:
+    // non sono in nessun documento pubblico e sono protette da token — una rotta privilegiata non
+    // deve confermare di esistere, quindi per loro il 404 e' la risposta giusta.
+    const SOLO_POST_PUBBLICHE = {
+      "/v1/seal-demo": "use POST /v1/seal-demo (5/day/IP, receipts marked demo:true)",
+      "/witness/add-checkpoint": "use POST /witness/add-checkpoint (c2sp tlog-witness: body = old <n> + consistency proof + signed note)",
+    };
+    if (SOLO_POST_PUBBLICHE[url.pathname] && request.method !== "POST" && request.method !== "OPTIONS") {
+      return json({ error: "method not allowed — " + SOLO_POST_PUBBLICHE[url.pathname] },
+                  405, { "allow": "POST", "cache-control": "public, max-age=300" });
+    }
     if (url.pathname === "/v1/seal-demo" && request.method === "POST") {
       if (!(await demoAllowed(env, ip))) {
         return json({ error: "demo limit reached (5/day/IP). For unlimited seals pay $0.01 via x402: POST https://gblin.digital/api/x402/seal" }, 429);
