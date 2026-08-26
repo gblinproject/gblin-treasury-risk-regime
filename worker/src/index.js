@@ -32,6 +32,7 @@ import { catalogTick, catalogReport, catalogFull, observatoryPage, observatoryJs
 import { witnessTick, witnessIndex, witnessLatestNote, witnessAddCheckpoint, witnessHistory, witnessDiscoverLogs, witnessConfiguredLogs, WITNESSED_LOGS } from "./witness.mjs";
 import { x402StaticChallenge } from "./x402-challenge.mjs";
 import { incidentFor, incidentResponse } from "./incidents.mjs";
+import { contaChiamata, scarica, scaricoDifferito, usoRecente } from "./mcpusage.mjs";
 import { sealAction, getReceipt, rlogStatus, demoAllowed, treeRoot, signedCheckpoint, proofFor, verifyReceipt, anchorConsistency, consistencyProof, leaves, pushToWitnesses, witnessState, PROVENANCE_LEVELS, RLOG_ORIGIN } from "./rlog.mjs";
 
 const GBLIN = "0x36C81d7E1966310F305eA637e761Cf77F90852f0";
@@ -1169,6 +1170,19 @@ async function handleMessage(msg, env) {
   const { id, method, params } = msg;
   const isNotification = !("id" in msg);
 
+  // Contatore aggregato della superficie gratuita (vedi mcpusage.mjs): si registra COSA e'
+  // stato chiamato, mai CHI ha chiamato. Il nome dello strumento si prende dalla nostra
+  // lista, non dal testo del chiamante, cosi' nessuno puo' scriversi chiavi arbitrarie.
+  try {
+    if (method === "tools/call") {
+      const richiesto = params && params.name;
+      const risolto = LEGACY_TOOL_NAMES[richiesto] || richiesto;
+      contaChiamata("tools/call", TOOLS.some((t) => t.name === risolto) ? risolto : "unknown");
+    } else if (method !== "notifications/initialized") {
+      contaChiamata(method);
+    }
+  } catch { /* un contatore non puo' rompere una risposta */ }
+
   try {
     switch (method) {
       case "initialize": {
@@ -1297,13 +1311,51 @@ function parsePaymentObservation(header) {
   return out;
 }
 
+// Scarica il lotto dei contatori DOPO aver risposto, cosi' non allunga la risposta del
+// chiamante. Se il runtime non ci passa ctx, si scarica comunque ma senza attenderlo.
+function flushUso(env, ctx) {
+  try {
+    // subito: scarica il lotto gia' accumulato (le chiamate precedenti di questo isolate)
+    const p = scarica(env);
+    if (p && ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(p);
+    // dopo qualche secondo: scarica anche QUESTA richiesta, che altrimenti resterebbe in
+    // sospeso fino alla prossima e morirebbe con l'isolate. Vive dentro waitUntil, quindi
+    // non allunga di un millisecondo la risposta al chiamante.
+    if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(scaricoDifferito(env));
+  } catch { /* mai far fallire una risposta per un contatore */ }
+}
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (env.MCP_DISABLED === "true") {
       return json({ error: "GBLIN MCP temporarily disabled" }, 503);
     }
 
     const url = new URL(request.url);
+
+    // Le superfici gratuite della PROVA: se nessuno rilegge una ricevuta o un checkpoint,
+    // il prodotto non ha lettori, e finora non lo sapevamo. Percorsi normalizzati su un
+    // elenco fisso: un percorso inventato non crea una chiave nuova.
+    try {
+      const p = url.pathname;
+      const fisso = [
+        "/coherence", "/log", "/log/checkpoint", "/log/leaves", "/log/consistency",
+        "/log/witnesses", "/witness", "/regime", "/observatory", "/observatory.json", "/meta",
+      ];
+      const normalizzato =
+        fisso.includes(p) ? p
+        : p.startsWith("/v1/receipt/") ? "/v1/receipt"
+        : p.startsWith("/v1/verify/") ? "/v1/verify"
+        : p.startsWith("/log/proof/") ? "/log/proof"
+        : p.startsWith("/receipt/") ? "/receipt (explorer)"
+        : p.startsWith("/coherence/incident/") ? "/coherence/incident"
+        : null;
+      if (normalizzato) contaChiamata("http", normalizzato);
+    } catch { /* mai far fallire una risposta per un contatore */ }
+    // Scarico qui, in cima: vale per OGNI rotta (non solo /mcp, dove stava prima e per cui
+    // i contatori HTTP non venivano mai scritti) e scarica il lotto PRECEDENTE, quindi le
+    // chiamate ravvicinate si fondono comunque in una scrittura sola.
+    flushUso(env, ctx);
 
     // Sfida x402 anonima servita dal bordo (vedi x402-challenge.mjs). Ci arriva riscritta da
     // una Project Routing Rule di Vercel quando la richiesta NON porta pagamento. Vercel,
@@ -1652,6 +1704,12 @@ export default {
       return json({ ok: true, complete, ...(await coherenceReport(env)) });
     }
 
+    // Uso aggregato della superficie gratuita. Gratis da leggere come tutto il resto.
+    if (url.pathname === "/mcp/usage" && (request.method === "GET" || request.method === "HEAD")) {
+      const giorni = Math.min(60, Math.max(1, Number(url.searchParams.get("days")) || 14));
+      return json(await usoRecente(env, giorni), 200, { "cache-control": "public, max-age=120" });
+    }
+
     if (url.pathname !== "/mcp") return json({ error: "not found — MCP endpoint is /mcp" }, 404);
 
     // Stateless server: no SSE stream to resume. Spec-permitted response.
@@ -1675,11 +1733,13 @@ export default {
         const r = await handleMessage(m, env);
         if (r) results.push(r);
       }
+      flushUso(env, ctx);
       if (results.length === 0) return new Response(null, { status: 202, headers: CORS });
       return json(results);
     }
 
     const result = await handleMessage(body, env);
+    flushUso(env, ctx);
     if (result === null) return new Response(null, { status: 202, headers: CORS });
     return json(result);
   },
@@ -1688,6 +1748,7 @@ export default {
   // promise once; on the first tick of a new UTC day it also seals the day
   // that just closed as an on-chain attestation (no-op until the key is set).
   async scheduled(_event, env, ctx) {
+    ctx.waitUntil(scarica(env, true)); // eventuale lotto residuo di questo isolate
     const work = (async () => {
       // Witness first: 1-2 subrequest, mai in conflitto col budget del sigillo.
       await witnessTick(env).catch((e) => console.error("witness:", e.message));
