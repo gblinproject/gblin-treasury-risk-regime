@@ -1750,8 +1750,15 @@ export default {
   async scheduled(_event, env, ctx) {
     ctx.waitUntil(scarica(env, true)); // eventuale lotto residuo di questo isolate
     const work = (async () => {
-      // Witness first: 1-2 subrequest, mai in conflitto col budget del sigillo.
-      await witnessTick(env).catch((e) => console.error("witness:", e.message));
+      // Witness: 1-2 subrequest, mai in conflitto col budget del sigillo.
+      // Ogni 30 minuti, non ogni 10: la cofirma attesta che il log e' rimasto append-only
+      // fra le dimensioni VISTE, e vederlo 2 volte l'ora invece di 6 non toglie nulla a
+      // quella garanzia. Scritture risparmiate: ~190 al giorno su un tetto free di 1000.
+      // (27/08: Cloudflare ha avvisato al 90% del tetto; qui c'era il taglio piu' grosso
+      // che non tocca nessuna promessa hash-pinnata.)
+      if (new Date().getUTCMinutes() % 30 < 10) {
+        await witnessTick(env).catch((e) => console.error("witness:", e.message));
+      }
       await coherenceObserve(env);
       await pushToWitnesses(env).catch((e) => console.error("witness push:", e && e.message));
       if (env.COHERENCE) {

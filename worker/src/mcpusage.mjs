@@ -29,10 +29,18 @@
  */
 
 const GIORNI_TTL = 120 * 86400;
-const LOTTO_MAX = 25;          // tante chiamate ravvicinate = una sola scrittura
-let attesaMs = 60_000;         // finestra base: al massimo una scrittura al minuto per isolate
-const RALLENTA_DOPO = 40;      // poi si passa a 10 minuti...
-const STOP_DOPO = 200;         // ...e oltre questa soglia si smette di scrivere per oggi
+const LOTTO_MAX = 1000;        // il lotto non forza mai la scrittura: comanda solo l'orologio
+let attesaMs = 3600_000;       // UNA scrittura all'ora per isolate, non di piu'
+const RALLENTA_DOPO = 12;      // dopo 12 scritture (mezza giornata) si passa a 3 ore
+const STOP_DOPO = 20;          // oltre 20 scritture al giorno per isolate si smette
+
+// 27/08, ORE 8 DEL MATTINO: Cloudflare ha avvisato che l'account era al 90% del tetto KV
+// giornaliero. Il consumo nuovo era questo contatore, acceso ieri sera: uno scanner esterno
+// enumera la superficie ogni due minuti e ogni chiamata faceva una scrittura. Il conteggio
+// serve a sapere QUANTE chiamate al giorno, non a quale minuto siano arrivate: un lotto
+// all'ora da' lo stesso numero al costo di 24 scritture invece di 500.
+// La regola resta: i sigilli delle promesse vengono prima del contatore. Se il budget si
+// stringe, si perde il conteggio, mai il sigillo.
 
 // Misurato il 27/08: uno scanner esterno enumera la superficie ~ogni due minuti (495 chiamate
 // in sette ore). A quel ritmo una scrittura per chiamata mangerebbe il tetto KV free (1000 al
@@ -161,7 +169,7 @@ export async function usoRecente(env, giorni = 14) {
     not_collected:
       "No IP, no user agent, no caller identity, no arguments, no per-call timestamps. This counts calls, not callers, and there is no way to attribute any of these numbers to a person or an agent.",
     write_budget:
-      "The counter throttles itself: at most one write per minute per isolate, then one per ten minutes after 40 writes, then it stops writing for the day after 200. The daily seals of the public promises share the same 1000-writes/day free quota and come first — an uncounted call is a small loss, a missed seal would break the promise we attest.",
+      "The counter batches to at most one write per hour per isolate, then one per three hours after 12, and stops after 20 in a day. The daily seals of the public promises share the same 1000-writes/day free quota and come first: an uncounted call is a small loss, a missed seal would break the promise we attest. Counts are therefore hourly aggregates, not per-minute.",
     accuracy:
       "Lower bound. Counters are buffered in memory per isolate and flushed to storage in batches; an evicted isolate loses its batch and concurrent flushes can overwrite each other. Undercounting is preferred to a precise number we could not defend.",
     includes_our_own_traffic:
