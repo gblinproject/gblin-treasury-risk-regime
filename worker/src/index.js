@@ -32,7 +32,7 @@ import { catalogTick, catalogReport, catalogFull, observatoryPage, observatoryJs
 import { witnessTick, witnessIndex, witnessLatestNote, witnessAddCheckpoint, witnessHistory, witnessDiscoverLogs, witnessConfiguredLogs, WITNESSED_LOGS } from "./witness.mjs";
 import { x402StaticChallenge } from "./x402-challenge.mjs";
 import { incidentFor, incidentResponse } from "./incidents.mjs";
-import { contaChiamata, scarica, scaricoDifferito, usoRecente } from "./mcpusage.mjs";
+import { contaChiamata, metodoNoto, scarica, scaricoDifferito, usoRecente } from "./mcpusage.mjs";
 import { sealAction, getReceipt, rlogStatus, demoAllowed, treeRoot, signedCheckpoint, proofFor, verifyReceipt, anchorConsistency, consistencyProof, leaves, pushToWitnesses, witnessState, PROVENANCE_LEVELS, RLOG_ORIGIN } from "./rlog.mjs";
 
 const GBLIN = "0x36C81d7E1966310F305eA637e761Cf77F90852f0";
@@ -1179,7 +1179,7 @@ async function handleMessage(msg, env) {
       const risolto = LEGACY_TOOL_NAMES[richiesto] || richiesto;
       contaChiamata("tools/call", TOOLS.some((t) => t.name === risolto) ? risolto : "unknown");
     } else if (method !== "notifications/initialized") {
-      contaChiamata(method);
+      contaChiamata(metodoNoto(method)); // elenco chiuso: un metodo inventato non crea una chiave
     }
   } catch { /* un contatore non puo' rompere una risposta */ }
 

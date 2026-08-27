@@ -29,9 +29,26 @@
  */
 
 const GIORNI_TTL = 120 * 86400;
-const LOTTO_MAX = 25;          // sotto carico, tante chiamate ravvicinate = una sola scrittura
-let attesaMs = 20_000;         // a basso traffico: praticamente una scrittura per chiamata
-const SCARICHI_PRIMA_DI_RALLENTARE = 200; // oltre questa soglia l'isolate scrive piu' di rado
+const LOTTO_MAX = 25;          // tante chiamate ravvicinate = una sola scrittura
+let attesaMs = 60_000;         // finestra base: al massimo una scrittura al minuto per isolate
+const RALLENTA_DOPO = 40;      // poi si passa a 10 minuti...
+const STOP_DOPO = 200;         // ...e oltre questa soglia si smette di scrivere per oggi
+
+// Misurato il 27/08: uno scanner esterno enumera la superficie ~ogni due minuti (495 chiamate
+// in sette ore). A quel ritmo una scrittura per chiamata mangerebbe il tetto KV free (1000 al
+// giorno) di cui ~600 servono ai sigilli delle promesse: sforare significherebbe non sigillare,
+// cioe' rompere proprio la promessa che attestiamo. Il conteggio non vale quel rischio, quindi
+// il contatore si strozza da solo e lo dichiara nel report.
+
+// Elenco CHIUSO dei metodi JSON-RPC. Il 26/08 nel contatore e' comparsa la chiave
+// "this/method/does/not/exist": avevo protetto i nomi dei TOOL prendendoli dalla nostra lista,
+// ma i nomi dei METODI li scrivevo come arrivavano — cioe' chiunque poteva creare chiavi nuove
+// all'infinito e gonfiare il documento del giorno. Fuori da questo elenco si conta "other".
+const METODI = new Set([
+  "initialize", "ping", "tools/list", "tools/call",
+  "prompts/list", "prompts/get", "resources/list", "resources/read",
+]);
+export const metodoNoto = (m) => (METODI.has(m) ? m : "other");
 
 // Misurato il 26/08 al primo collaudo: con la soglia a 10 chiamate / 10 minuti, su 12
 // chiamate ne risultavano 5. Non era un errore di conteggio, era il regime sbagliato: le
@@ -70,6 +87,7 @@ function daScaricare() {
  */
 export async function scarica(env, forza = false) {
   if (!env.COHERENCE || buffer.size === 0) return;
+  if (scarichiFatti >= STOP_DOPO) return; // budget dei sigilli prima del contatore
   if (!forza && !daScaricare()) return;
   if (inCorso) return inCorso;
 
@@ -78,7 +96,7 @@ export async function scarica(env, forza = false) {
   ultimoScarico = Date.now();
   // Freno sul budget KV (tetto free 1000 scritture/giorno, ~600 gia' usate dall'osservatore
   // delle promesse): se questo isolate ha gia' scritto tanto, rallenta invece di consumarlo.
-  if (++scarichiFatti > SCARICHI_PRIMA_DI_RALLENTARE) attesaMs = 5 * 60_000;
+  if (++scarichiFatti > RALLENTA_DOPO) attesaMs = 10 * 60_000;
 
   inCorso = (async () => {
     try {
@@ -112,7 +130,7 @@ export async function scarica(env, forza = false) {
  */
 export async function scaricoDifferito(env, ms = 2000) {
   await new Promise((r) => setTimeout(r, ms));
-  return scarica(env, scarichiFatti < 150);
+  return scarica(env, scarichiFatti < RALLENTA_DOPO);
 }
 
 /**
@@ -142,6 +160,8 @@ export async function usoRecente(env, giorni = 14) {
       "Aggregate counts of WHAT was called: for MCP, the JSON-RPC method plus the tool name for tools/call (taken from this server's own fixed list); for HTTP, the free proof endpoints normalised to a fixed set of paths, so an invented path cannot create a new key. Counted since 2026-08-26.",
     not_collected:
       "No IP, no user agent, no caller identity, no arguments, no per-call timestamps. This counts calls, not callers, and there is no way to attribute any of these numbers to a person or an agent.",
+    write_budget:
+      "The counter throttles itself: at most one write per minute per isolate, then one per ten minutes after 40 writes, then it stops writing for the day after 200. The daily seals of the public promises share the same 1000-writes/day free quota and come first — an uncounted call is a small loss, a missed seal would break the promise we attest.",
     accuracy:
       "Lower bound. Counters are buffered in memory per isolate and flushed to storage in batches; an evicted isolate loses its batch and concurrent flushes can overwrite each other. Undercounting is preferred to a precise number we could not defend.",
     includes_our_own_traffic:
