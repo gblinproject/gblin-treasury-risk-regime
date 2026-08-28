@@ -93,7 +93,28 @@ function daScaricare() {
  * Scarica il lotto su KV: una lettura + una scrittura, sulla chiave del giorno UTC.
  * Non solleva mai: un contatore non deve poter rompere una risposta.
  */
+// ─── SCRITTURE SOSPESE IL 28/08/2026 ────────────────────────────────────────
+// Il 27/08 Cloudflare ha avvisato al 90% del tetto KV; ho messo un freno da 20 scritture
+// al giorno e il 28/08 siamo andati oltre lo stesso. Il freno era sbagliato di concetto:
+// contava PER ISOLATE, e Cloudflare ne fa girare molti — venti scritture ciascuno, per
+// qualche decina di isolate, sono centinaia di scritture al giorno. Il tetto vero non e'
+// per isolate, e con KV non c'e' modo di contarlo globalmente senza usare... KV.
+//
+// La priorita' e' dichiarata e non cambia: i sigilli delle promesse vengono prima del
+// contatore. Un conteggio perso e' niente; un sigillo mancato romperebbe la promessa che
+// attestiamo. Quindi il contatore continua ad accumulare in memoria (e /mcp/usage serve i
+// giorni gia' registrati) ma NON scrive piu'.
+//
+// Cosa abbiamo gia' imparato e che non serve continuare a pagare: due giornate intere
+// misurate, 1.031 e 1.136 chiamate, e ZERO tools/call. Il traffico e' scanner. Sapevamo
+// solo questo e ci serviva solo questo.
+//
+// Se un giorno vorremo contare davvero, lo strumento giusto e' Analytics Engine, che non
+// consuma scritture KV. Non e' una cosa da fare adesso.
+const SCRITTURE_ATTIVE = false;
+
 export async function scarica(env, forza = false) {
+  if (!SCRITTURE_ATTIVE) return;
   if (!env.COHERENCE || buffer.size === 0) return;
   if (scarichiFatti >= STOP_DOPO) return; // budget dei sigilli prima del contatore
   if (!forza && !daScaricare()) return;
@@ -168,6 +189,8 @@ export async function usoRecente(env, giorni = 14) {
       "Aggregate counts of WHAT was called: for MCP, the JSON-RPC method plus the tool name for tools/call (taken from this server's own fixed list); for HTTP, the free proof endpoints normalised to a fixed set of paths, so an invented path cannot create a new key. Counted since 2026-08-26.",
     not_collected:
       "No IP, no user agent, no caller identity, no arguments, no per-call timestamps. This counts calls, not callers, and there is no way to attribute any of these numbers to a person or an agent.",
+    counting_suspended:
+      "Writing was suspended on 2026-08-28. The per-isolate write cap set the day before did not bound the total: Cloudflare runs many isolates, so a cap of 20 writes each still added up to hundreds a day and pushed the account over the free KV quota — the same quota the daily seals of the public promises depend on. The seals come first. The days already recorded remain readable below; no new days are being written.",
     write_budget:
       "The counter batches to at most one write per hour per isolate, then one per three hours after 12, and stops after 20 in a day. The daily seals of the public promises share the same 1000-writes/day free quota and come first: an uncounted call is a small loss, a missed seal would break the promise we attest. Counts are therefore hourly aggregates, not per-minute.",
     accuracy:

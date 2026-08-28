@@ -1756,7 +1756,10 @@ export default {
       // quella garanzia. Scritture risparmiate: ~190 al giorno su un tetto free di 1000.
       // (27/08: Cloudflare ha avvisato al 90% del tetto; qui c'era il taglio piu' grosso
       // che non tocca nessuna promessa hash-pinnata.)
-      if (new Date().getUTCMinutes() % 30 < 10) {
+      // 28/08: ridotto ancora, da ogni 30 minuti a ogni ora. La cofirma attesta che il log
+      // e' rimasto append-only fra le dimensioni VISTE: vederlo una volta l'ora invece di due
+      // non toglie nulla a quella garanzia, e dimezza le scritture di questo ramo.
+      if (new Date().getUTCMinutes() < 10) {
         await witnessTick(env).catch((e) => console.error("witness:", e.message));
       }
       await coherenceObserve(env);
@@ -1777,7 +1780,14 @@ export default {
           // free è 50 subrequest/invocazione e il sigillo ne consuma parecchi.
           // Una volta all'ora, non a ogni tick: il budget KV free e' 1000 scritture/giorno
           // e il catalogo ne scriveva una ogni 10 minuti (144) per un dato che cambia di rado.
-          if (new Date().getUTCMinutes() < 10) await catalogTick(env).catch((e) => console.error("catalog:", e.message));
+          // 28/08: da ogni ora a ogni 3 ore. La liveness degli endpoint del catalogo cambia
+          // lentamente e la sonda gira comunque a rotazione: tre giri al giorno bastano.
+          {
+            const ora = new Date();
+            if (ora.getUTCHours() % 3 === 0 && ora.getUTCMinutes() < 10) {
+              await catalogTick(env).catch((e) => console.error("catalog:", e.message));
+            }
+          }
         }
       }
     })();
