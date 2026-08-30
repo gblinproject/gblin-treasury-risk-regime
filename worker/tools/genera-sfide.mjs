@@ -22,14 +22,13 @@ const WEBAPP = resolve(qui, "../../../GBLIN_WEBAPP/test/x402-golden");
 const SENTINEL = resolve(qui, "../../../GBLIN-Sentinel/test/x402-golden");
 const USCITA = resolve(qui, "../src/x402-challenge.mjs");
 
-// I quattro percorsi guardati: senza questi parametri l'origin risponde 400 senza addebitare,
-// e la sfida 402 la si vede solo con i parametri (fixture *.paid-params.json).
-const GUARDATI = {
-  quote: ["direction", "amount"],
-  jit: ["usdc", "wallet"],
-  invest: ["usdc", "wallet"],
-  health: ["wallet"],
-};
+// 30/08/2026 — I QUATTRO PERCORSI "GUARDATI" NON SONO PIU' UN CASO A PARTE.
+// La guardia sui parametri e' stata legata alla presenza di un header di pagamento: adesso
+// l'anonimo riceve sempre la sfida 402 (era 400, e per questo il validatore Coinbase li
+// rifiutava e restavano fuori dal catalogo Bazaar), mentre chi paga con parametri sbagliati
+// prende il 400 sull'ORIGINE, prima di verify/settle. Al bordo arrivano solo richieste senza
+// header di pagamento, quindi qui il 400 non serve piu': tutti e 9 i percorsi sono uguali.
+const GUARDATI = {};
 
 const leggi = (dir, file) => JSON.parse(readFileSync(`${dir}/${file}`, "utf8"));
 
@@ -95,11 +94,12 @@ const modulo = `// Sfide x402 ANONIME servite dal bordo, per non far partire una
 //  - gblin.digital            /api/x402/<nome>  (9 percorsi)
 //  - gblin-sentinel.vercel.app /api/data/<nome> (4 percorsi)
 // e dentro la prima famiglia due comportamenti:
-//  - semplici: senza pagamento rispondono sempre la sfida 402.
-//  - guardati (quote, jit, invest, health): se mancano i parametri richiesti rispondono
-//    400 "nessun pagamento e' stato preso"; con i parametri rispondono la sfida 402.
-//    Verificato il 22/08: la sfida NON dipende dal valore dei parametri (due quote con
-//    amount diverso danno byte identici), quindi si puo' servire statica.
+// Dal 30/08/2026 tutti e nove si comportano allo stesso modo: senza pagamento rispondono la
+// sfida 402. Prima quote/jit/invest/health rispondevano 400 quando mancavano i parametri, e
+// quel 400 li teneva fuori dal catalogo Bazaar (il validatore CDP li rifiuta: "returned HTTP
+// 400 instead of 402"). Ora la guardia vive solo sul percorso PAGANTE, che non passa da qui.
+// Verificato il 22/08 e ancora valido: la sfida NON dipende dal valore dei parametri (due
+// quote con amount diverso danno byte identici), quindi si puo' servire statica.
 //
 // VINCOLO: questi byte sono indicizzati dai cataloghi x402 e sono le fixture golden in
 // GBLIN_WEBAPP/test/x402-golden/ e GBLIN-Sentinel/test/x402-golden/.
