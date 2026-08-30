@@ -33,7 +33,7 @@ import { witnessTick, witnessIndex, witnessLatestNote, witnessAddCheckpoint, wit
 import { x402StaticChallenge } from "./x402-challenge.mjs";
 import { incidentFor, incidentResponse } from "./incidents.mjs";
 import { contaChiamata, metodoNoto, scarica, scaricoDifferito, usoRecente } from "./mcpusage.mjs";
-import { sealAction, getReceipt, rlogStatus, demoAllowed, treeRoot, signedCheckpoint, proofFor, verifyReceipt, anchorConsistency, consistencyProof, leaves, pushToWitnesses, witnessState, PROVENANCE_LEVELS, RLOG_ORIGIN } from "./rlog.mjs";
+import { sealAction, getReceipt, rlogStatus, demoAllowed, demoConsume, treeRoot, signedCheckpoint, proofFor, verifyReceipt, anchorConsistency, consistencyProof, leaves, pushToWitnesses, witnessState, PROVENANCE_LEVELS, RLOG_ORIGIN } from "./rlog.mjs";
 
 const GBLIN = "0x36C81d7E1966310F305eA637e761Cf77F90852f0";
 const BASKET_SELECTOR = "0x8c7e0875"; // basket(uint256)
@@ -225,22 +225,27 @@ const TOOLS = [
   {
     name: "receipts.seal",
     description:
-      "Append the HASHES of an AI action to GBLIN's public RFC 6962 transparency log and return a portable receipt: Ed25519 signature, inclusion proof, operator-signed C2SP checkpoint, plus the latest on-chain anchor (EAS on Base, daily). mode=demo (the only mode over MCP): 5 seals/day/IP, receipts marked demo:true. Unlimited seals are a paid x402 HTTP endpoint (resource gblin://howto/seal). Provenance is self-reported: the receipt proves existence and time of the record, not that the action happened. The action/agent_id/tool/meta strings are PUBLISHED in the log: identifiers only, never secrets.",
+      "Append the HASHES of an AI action to GBLIN's public RFC 6962 transparency log and return a portable receipt: Ed25519 signature, inclusion proof, operator-signed C2SP checkpoint, plus the latest on-chain anchor (EAS on Base, daily). mode=demo (the only mode over MCP): 5 seals/day/IP, receipts marked demo:true. Unlimited seals are a paid x402 HTTP endpoint (resource gblin://howto/seal). Provenance is self-reported: the receipt proves existence and time of the record, not that the action happened. The action/agent_id/tool/meta strings are PUBLISHED in the log: identifiers only, never secrets. Fields not listed here are ignored and NOT recorded.",
     inputSchema: {
       type: "object",
       properties: {
         mode: { type: "string", enum: ["demo"], default: "demo", description: "Only 'demo' is available over MCP (5/day/IP). Paid seals go through x402 HTTP." },
         action: { type: "string", minLength: 1, maxLength: 128, description: "What the AI did, short label. PUBLISHED in the log." },
-        input_hash: { type: "string", pattern: "^[0-9a-fA-F]{64}$", description: "sha256 of the input/prompt, 64 hex chars" },
-        output_hash: { type: "string", pattern: "^[0-9a-fA-F]{64}$", description: "sha256 of the output, 64 hex chars (optional)" },
+        input_hash: { type: "string", pattern: "^\\s*(0x)?[0-9a-fA-F]{64}\\s*$", description: "sha256 of the input/prompt, 64 hex chars (0x prefix optional)" },
+        output_hash: { type: "string", pattern: "^\\s*((0x)?[0-9a-fA-F]{64})?\\s*$", description: "sha256 of the output, 64 hex chars (optional; empty or blank = omitted)" },
         agent_id: { type: "string", maxLength: 128, description: "Your agent identifier (optional). PUBLISHED." },
         tool: { type: "string", maxLength: 128, description: "Tool/model used (optional). PUBLISHED." },
         meta: { type: "string", maxLength: 512, description: "Extra JSON object as a string (optional). PUBLISHED." },
       },
-      required: ["mode", "action", "input_hash"],
-      additionalProperties: false,
+      required: ["action", "input_hash"],
+      // Il server ignora i campi che non conosce. Vietarli qui faceva rifiutare la chiamata ai
+      // client che validano lo schema, per un campo che sarebbe stato innocuo (30/08/2026).
+      additionalProperties: true,
     },
-    annotations: { title: "Seal an AI action (demo receipt)", readOnlyHint: false, idempotentHint: false, openWorldHint: false },
+    // destructiveHint ha default TRUE nella spec MCP quando readOnlyHint e' false: omettendolo,
+    // l'unico tool che produce valore si dichiarava distruttivo mentre e' puramente additivo
+    // (append-only). openWorldHint: scrive un log pubblico e restituisce un'ancora on-chain.
+    annotations: { title: "Seal an AI action (demo receipt)", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     outputSchema: RECEIPT_SCHEMA,
   },
   {
@@ -905,7 +910,7 @@ const LEGACY_TOOL_NAMES = {
   "receipts.entry.verify": "receipts.verify",
 };
 
-async function callTool(rawName, env, args = {}) {
+async function callTool(rawName, env, args = {}, req = {}) {
   const name = LEGACY_TOOL_NAMES[rawName] || rawName;
   switch (name) {
     case "risk.regime":
@@ -927,8 +932,13 @@ async function callTool(rawName, env, args = {}) {
 
     case "receipts.seal": {
       if (args.mode && args.mode !== "demo") throw Object.assign(new Error("only mode='demo' is available over MCP; paid seals: x402 HTTP endpoint (resource gblin://howto/seal)"), { code: -32602 });
+      // Il "5/day/IP" era dichiarato in tre posti e non era applicato qui: era una promessa falsa.
+      // Ora vale davvero, e come sulla porta HTTP si consuma solo dopo un sigillo riuscito.
+      const { ip, ctx } = req;
+      if (!(await demoAllowed(env, ip || "unknown"))) throw Object.assign(new Error("demo limit reached (5/day/IP). For unlimited seals pay $0.01 via x402: POST https://gblin.digital/api/x402/seal"), { code: -32602 });
       const r = await sealAction(env, args, { demo: true });
       if (r.status !== 200) throw new Error(r.error);
+      if (ctx) ctx.waitUntil(demoConsume(env, ip || "unknown")); else await demoConsume(env, ip || "unknown");
       return r.receipt;
     }
     case "receipts.verify":
@@ -1163,7 +1173,7 @@ function rpcError(id, code, message) {
   return { jsonrpc: "2.0", id, error: { code, message } };
 }
 
-async function handleMessage(msg, env) {
+async function handleMessage(msg, env, req = {}) {
   if (!msg || msg.jsonrpc !== "2.0" || typeof msg.method !== "string") {
     return rpcError(msg && "id" in msg ? msg.id : null, -32600, "Invalid Request");
   }
@@ -1195,7 +1205,7 @@ async function handleMessage(msg, env) {
           capabilities: { tools: {}, resources: {}, prompts: {} },
           serverInfo: SERVER_INFO,
           instructions:
-            "GBLIN hosted MCP (stateless, no auth, 60 req/min/IP). Free tools: risk.regime (live calm|elevated|crash from the on-chain Crash Shield), risk.attestation_sample, protocol.stats, protocol.info, coherence.report, and AI Action Receipts: receipts.seal (demo, 5/day/IP), receipts.get, receipts.verify (pure math). Paid things are x402 HTTP endpoints, never MCP calls: read resources gblin://howto/attestation, gblin://howto/seal, gblin://limits, gblin://keys. Two ready-made prompts: risk_gate, seal_and_verify. The stdio package @gblin-protocol/mcp-server is a different, larger toolset (treasury/swap tools).",
+            "GBLIN hosted MCP (stateless, no auth, 60 req/min/IP, everything here is free). TWO THINGS LIVE HERE. (1) AI ACTION RECEIPTS - a public append-only RFC 6962 transparency log for AI actions. receipts.seal appends the SHA-256 of your input (and optionally your output) plus a short public label, and returns a portable receipt: Ed25519 signature, inclusion proof, C2SP checkpoint, tree root anchored daily on Base. Minimal call: receipts.seal {action: \"what you did\", input_hash: \"<sha256 hex>\"} - demo mode, 5/day/IP, receipts marked demo:true. Then receipts.verify checks it with pure math, no trust in this server; receipts.get re-reads any receipt by index. A receipt proves the record existed here at this time - NOT that the action happened (provenance is self-reported). (2) MARKET RISK: risk.regime (live calm|elevated|crash from the on-chain Crash Shield), risk.attestation_sample, protocol.stats, protocol.info, coherence.report. Nothing is paid over MCP; unlimited seals and signed attestations are x402 HTTP endpoints - see resources gblin://howto/seal, gblin://howto/attestation, gblin://limits, gblin://keys. Ready-made prompts: seal_and_verify, risk_gate. The stdio package @gblin-protocol/mcp-server is a different, larger toolset (treasury/swap tools).",
         });
       }
       case "ping":
@@ -1221,7 +1231,7 @@ async function handleMessage(msg, env) {
       case "tools/call": {
         const name = params && params.name;
         try {
-          const out = await callTool(name, env, (params && params.arguments) || {});
+          const out = await callTool(name, env, (params && params.arguments) || {}, req);
           return rpcResult(id, {
             content: [{ type: "text", text: JSON.stringify(out, null, 2) }],
             structuredContent: out, // matches the tool's declared outputSchema
@@ -1341,6 +1351,10 @@ export default {
       const fisso = [
         "/coherence", "/log", "/log/checkpoint", "/log/leaves", "/log/consistency",
         "/log/witnesses", "/witness", "/regime", "/observatory", "/observatory.json", "/meta",
+        // La porta che diciamo alla gente di usare non era contata: non sapevamo se qualcuno
+        // avesse provato e fallito (relazione 30/08/2026, difetto 5.9). Conta il TENTATIVO;
+        // l'esito si legge dalle foglie.
+        "/v1/seal-demo",
       ];
       const normalizzato =
         fisso.includes(p) ? p
@@ -1498,6 +1512,8 @@ export default {
       }
       let body; try { body = await request.json(); } catch { return json({ error: "invalid JSON" }, 400); }
       const r = await sealAction(env, body, { demo: true });
+      // La quota si consuma solo se la ricevuta esiste davvero: un 400 non deve costare un tentativo.
+      if (r.status === 200) ctx.waitUntil(demoConsume(env, ip));
       return json(r.status === 200 ? r.receipt : { error: r.error }, r.status, { "cache-control": "no-store" });
     }
     if (url.pathname.startsWith("/v1/receipt/") && request.method === "GET") {
@@ -1730,7 +1746,7 @@ export default {
     if (Array.isArray(body)) {
       const results = [];
       for (const m of body) {
-        const r = await handleMessage(m, env);
+        const r = await handleMessage(m, env, { ip, ctx });
         if (r) results.push(r);
       }
       flushUso(env, ctx);
@@ -1738,7 +1754,7 @@ export default {
       return json(results);
     }
 
-    const result = await handleMessage(body, env);
+    const result = await handleMessage(body, env, { ip, ctx });
     flushUso(env, ctx);
     if (result === null) return new Response(null, { status: 202, headers: CORS });
     return json(result);

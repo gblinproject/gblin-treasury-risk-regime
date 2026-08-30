@@ -80,6 +80,8 @@ const chiaveGiorno = (giorno) => `mcpuse:${giorno}`;
 export function contaChiamata(metodo, strumento) {
   const chiave = strumento ? `${metodo}:${strumento}` : metodo;
   buffer.set(chiave, (buffer.get(chiave) || 0) + 1);
+  // Un tentativo di sigillo e' raro e non deve morire con l'isolate aspettando l'orologio.
+  if (CHIAVI_SEMPRE.has(chiave)) urgente = true;
 }
 
 function daScaricare() {
@@ -113,15 +115,31 @@ function daScaricare() {
 // consuma scritture KV. Non e' una cosa da fare adesso.
 const SCRITTURE_ATTIVE = false;
 
+// ECCEZIONE STRETTA (30/08/2026). Con le scritture sospese non sapevamo se qualcuno avesse
+// PROVATO a sigillare e fosse fallito: l'unica domanda che contava restava senza risposta.
+// Queste due chiavi contano tentativi RARI (oggi: unita' al giorno, non centinaia come gli
+// scanner), quindi passano anche a scritture sospese e costano una manciata di put. Il resto
+// del traffico resta muto. La priorita' dichiarata non cambia: i sigilli delle promesse prima
+// del contatore.
+const CHIAVI_SEMPRE = new Set(["http:/v1/seal-demo", "tools/call:receipts.seal"]);
+let urgente = false;
+
 export async function scarica(env, forza = false) {
-  if (!SCRITTURE_ATTIVE) return;
   if (!env.COHERENCE || buffer.size === 0) return;
   if (scarichiFatti >= STOP_DOPO) return; // budget dei sigilli prima del contatore
-  if (!forza && !daScaricare()) return;
+  if (!SCRITTURE_ATTIVE && !urgente) return;
+  if (!forza && !urgente && !daScaricare()) return;
   if (inCorso) return inCorso;
 
-  const lotto = new Map(buffer);
-  buffer.clear();
+  // A scritture sospese si porta via SOLO cio' che e' raro e ci serve; il rumore degli
+  // scanner resta nel buffer in memoria e muore con l'isolate, come gia' oggi.
+  const lotto = new Map(
+    SCRITTURE_ATTIVE ? buffer : [...buffer].filter(([k]) => CHIAVI_SEMPRE.has(k)),
+  );
+  if (SCRITTURE_ATTIVE) buffer.clear();
+  else for (const k of lotto.keys()) buffer.delete(k);
+  urgente = false;
+  if (lotto.size === 0) return;
   ultimoScarico = Date.now();
   // Freno sul budget KV (tetto free 1000 scritture/giorno, ~600 gia' usate dall'osservatore
   // delle promesse): se questo isolate ha gia' scritto tanto, rallenta invece di consumarlo.
@@ -190,7 +208,9 @@ export async function usoRecente(env, giorni = 14) {
     not_collected:
       "No IP, no user agent, no caller identity, no arguments, no per-call timestamps. This counts calls, not callers, and there is no way to attribute any of these numbers to a person or an agent.",
     counting_suspended:
-      "Writing was suspended on 2026-08-28. The per-isolate write cap set the day before did not bound the total: Cloudflare runs many isolates, so a cap of 20 writes each still added up to hundreds a day and pushed the account over the free KV quota — the same quota the daily seals of the public promises depend on. The seals come first. The days already recorded remain readable below; no new days are being written.",
+      "Writing was suspended on 2026-08-28. The per-isolate write cap set the day before did not bound the total: Cloudflare runs many isolates, so a cap of 20 writes each still added up to hundreds a day and pushed the account over the free KV quota — the same quota the daily seals of the public promises depend on. The seals come first. The days already recorded remain readable below.",
+    still_counted:
+      "One narrow exception since 2026-08-30: attempts to CREATE a receipt (http:/v1/seal-demo and tools/call:receipts.seal) are still recorded, because they are rare — units per day, not the hundreds the scanners generate — and because without them we cannot tell whether anyone tried to seal and failed. READ THIS CORRECTLY: for days from 2026-08-30 onward these two keys are the ONLY thing counted, so the totals for those days are NOT traffic totals and must not be compared with the earlier days.",
     write_budget:
       "The counter batches to at most one write per hour per isolate, then one per three hours after 12, and stops after 20 in a day. The daily seals of the public promises share the same 1000-writes/day free quota and come first: an uncounted call is a small loss, a missed seal would break the promise we attest. Counts are therefore hourly aggregates, not per-minute.",
     accuracy:

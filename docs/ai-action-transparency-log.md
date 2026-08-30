@@ -30,6 +30,28 @@ Anchoring is root-only: `anchor.what_is_anchored` says so in every receipt. A le
 its index is below `anchored_tree_size`; newer receipts rest on the operator-signed checkpoint until the next
 daily anchor.
 
+## Making one, right now
+
+The whole document used to list only the ways to *read* the log, never the way to write to it. Here is the
+free door, in one command — no key, no wallet, no account:
+
+    printf 'hello' | shasum -a 256          # -> the input_hash below
+    curl -s https://gblin-mcp.gblin-mcp-worker.workers.dev/v1/seal-demo \
+      -H 'content-type: application/json' \
+      -d '{"action":"my-first-seal","input_hash":"2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"}'
+
+The response **is** the receipt: keep it. Five per day per IP, and only successful seals count against that.
+Records are marked `demo: true`. Then check it without trusting this server:
+
+    node verify-receipt.mjs receipt.json     # zero dependencies, does not call us
+
+Over MCP the same thing is the tool `receipts.seal` with `{action, input_hash}`; the paid, unmetered version is
+`POST https://gblin.digital/api/x402/seal` ($0.01 USDC via x402).
+
+Two things worth knowing before you send anything: `action`, `agent_id`, `tool` and `meta` are **published in
+the public log** — put identifiers there, never secrets — and only the *hashes* of your input and output ever
+reach us, never the content.
+
 ## Endpoints (free, no auth, no key)
 
     GET /log/checkpoint                    C2SP signed note (Ed25519)
@@ -47,9 +69,12 @@ from the receipt JSON: you do not need to trust this server, and it does not cal
 
 ## Witnessing
 
-The log is **operator-signed only**, which is why nothing here says "independently witnessed". The endpoints
-above exist so that a witness does not have to take our word for anything: fetch the checkpoint, ask for a
-consistency proof against the size you last saw, or download the raw leaves and recompute the root.
+The log is operator-signed **and cosigned by one third-party witness** (`markovianprotocol.com/witness`,
+since 22 August 2026 — see `GET /log/witnesses`). A cosignature attests only that the log stayed append-only
+between the sizes that witness saw. It says nothing about whether a sealed action is true, and we will not
+word it more strongly than that. The endpoints above exist so that a witness does not have to take our word
+for anything: fetch the checkpoint, ask for a consistency proof against the size you last saw, or download
+the raw leaves and recompute the root. More witnesses are welcome.
 
 We also run a witness ourselves, `gblin.digital/witness`, speaking
 [c2sp.org/tlog-witness](https://c2sp.org/tlog-witness) both ways: it co-signs a third-party log every ten
@@ -57,14 +82,18 @@ minutes after verifying the log signature and a consistency proof, and it accept
 discovers logs from the [Witness Network](https://witness-network.org) `testing/log-list.1`, adds new ones to
 its own configuration, and never removes or modifies a log because the list changed.
 
-Cosigning invitation is open, and it is not conditional on anything.
+One witness cosigns today. More are welcome, and joining is not conditional on anything.
 
 ## Honest scale
 
-This log is small and new. At the time of writing it holds fewer than twenty leaves, most of them our own tests,
-and it has had exactly one paid seal from an external wallet. We publish the size in `/log`; there is no
-counter here that we would ever want to inflate. If that is too small to be interesting, that is a fair
-conclusion to draw — the point of publishing the numbers is to let you draw it.
+This log is small and new, and **nobody outside GBLIN has sealed anything in it yet**. As of 30 August 2026 it
+holds 39 leaves: 18 are the daily anchoring receipts our own cron writes, 4 are the malformed records
+described below, and the rest are our tests — including the two seals we paid for ourselves to check the paid
+path end to end. An earlier version of this page said it "had exactly one paid seal from an external wallet".
+That was wrong twice over: there are two paid seals and neither came from outside. We publish the size in
+`/log` and the raw records in `/log/leaves`, so you never have to take our word for any of this. If that is
+too small to be interesting, that is a fair conclusion to draw — the point of publishing the numbers is to let
+you draw it.
 
 ## One bug worth reporting publicly
 
@@ -72,14 +101,16 @@ The paid path was broken from the day it shipped and nobody noticed, because nob
 canonicalizer emitted a literal `undefined` for an absent field, so any **non-demo** record was written as
 invalid JSON: the receipt was issued correctly, but re-reading it returned HTTP 500. Every receipt in the log
 was a demo, so the bug stayed invisible for two weeks. We found it by paying for our own product once. Fixed on
-21 August; the three records written while the bug was live remain in the log with a `malformed_entry` field
-that states the cause and the date, because an append-only log is not rewritten — it is disclosed.
+21 August; the four records written while the bug was live (indices 11 to 14) remain in the log with a
+`malformed_entry` field that states the cause and the date, because an append-only log is not rewritten — it
+is disclosed. `GET /log/leaves` reports them as `malformed_indices`: hash them as opaque bytes, do not parse
+them as JSON.
 
 ## Witnessing (added 21 August 2026)
 
-The log is operator-signed. That is a weak claim on its own: an operator who controls the key can, in
-principle, sign two different trees. The fix is a third party that has seen the log at two sizes and
-can say it did not change underneath.
+An operator signature is a weak claim on its own: an operator who controls the key can, in principle, sign
+two different trees. The fix is a third party that has seen the log at two sizes and can say it did not
+change underneath. One does, since 22 August 2026.
 
 We implement the log side of [c2sp.org/tlog-witness](https://c2sp.org/tlog-witness): whenever the tree
 grows, the worker POSTs `old <n>` plus an RFC 6962 consistency proof plus the signed note to each

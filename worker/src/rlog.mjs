@@ -328,16 +328,23 @@ export async function signedCheckpoint(env, N, root, { withCosignatures = true }
 }
 
 // ---------- append + ricevuta ----------
+const VERIFY_HINT = "offline: see verify-receipt.mjs in github.com/gblinproject/gblin-treasury-risk-regime (zero deps)";
+const RECEIPT_NOTE = "Evidence of existence and time in a signed append-only log, root anchored daily on Base (EAS) — NOT a compliance certificate and NOT an endorsement of the content. The action/agent_id/tool/meta strings you send are published in the public log: put identifiers there, never secrets; input/output go in as hashes only. For a PAID seal the record also carries what this server saw of the payment (payer address, amount, authorization nonce): that too is public, and it is on-chain public already.";
+
 export function validateSealInput(body) {
   const errs = [];
   const hexRe = /^(0x)?[0-9a-fA-F]{64}$/;
   const s = (x) => typeof x === "string" ? x.trim() : "";
   const action = s(body.action), agent = s(body.agent_id), tool = s(body.tool);
-  if (!action || action.length > MAX_STR) errs.push("action: required, <=128 chars");
+  if (!action) errs.push("action: required (short public label, <=128 chars)");
+  else if (action.length > MAX_STR) errs.push(`action: too long (${action.length} chars, max 128)`);
   if (agent.length > MAX_STR) errs.push("agent_id: <=128 chars");
   if (tool.length > MAX_STR) errs.push("tool: <=128 chars");
   if (!hexRe.test(s(body.input_hash) || "")) errs.push("input_hash: 32-byte hex (sha256 of your input) required");
-  if (body.output_hash != null && !hexRe.test(s(body.output_hash))) errs.push("output_hash: 32-byte hex if present");
+  // Stringa vuota = campo assente. Gli agenti riempiono gli opzionali con "" e prima si beccavano
+  // un 400 su un campo che non volevano mandare (relazione 30/08/2026, difetto 5.4).
+  const outRaw = s(body.output_hash);
+  if (outRaw && !hexRe.test(outRaw)) errs.push("output_hash: 32-byte hex if present");
   let meta = null;
   if (body.meta != null) {
     const mj = typeof body.meta === "string" ? body.meta : JSON.stringify(body.meta);
@@ -346,7 +353,7 @@ export function validateSealInput(body) {
   }
   return { errs, action, agent, tool, meta,
     input_hash: s(body.input_hash).replace(/^0x/, "").toLowerCase(),
-    output_hash: body.output_hash != null ? s(body.output_hash).replace(/^0x/, "").toLowerCase() : null };
+    output_hash: outRaw ? outRaw.replace(/^0x/, "").toLowerCase() : null };
 }
 
 export async function sealAction(env, input, { demo = false, operator = false, payment = null } = {}) {
@@ -401,8 +408,8 @@ export async function sealAction(env, input, { demo = false, operator = false, p
       checkpoint,
       anchor: await anchorInfo(env, N),
       provenance: provenanceFor(payload),
-      verify: "offline: see verify-receipt.mjs in github.com/gblinproject/gblin-treasury-risk-regime (zero deps)",
-      note: "Evidence of existence and time in a signed append-only log, root anchored daily on Base (EAS) — NOT a compliance certificate and NOT an endorsement of the content. The action/agent_id/tool/meta strings you send are published in the public log: put identifiers there, never secrets; input/output go in as hashes only. For a PAID seal the record also carries what this server saw of the payment (payer address, amount, authorization nonce): that too is public, and it is on-chain public already.",
+      verify: VERIFY_HINT,
+      note: RECEIPT_NOTE,
     },
   };
 }
@@ -431,6 +438,14 @@ export async function getReceipt(env, index) {
       inclusion_proof: proof, checkpoint,
       anchor: await anchorInfo(env, index),
       provenance: provenanceFor(parsed || {}),
+      // Questi tre campi c'erano solo nella ricevuta emessa al sigillo, non in quella riletta:
+      // chi riceveva una ricevuta da un terzo non aveva il puntatore al verificatore offline
+      // ne' l'avvertenza su cosa e' pubblico. La "portabilita'" saltava proprio sul percorso di
+      // rilettura (relazione 30/08/2026, difetto 5.2). Non toccano leaf ne' firma: non sono
+      // nel payload canonico.
+      canonical_sha256: hex(await sha256(te.encode(canonical))),
+      verify: VERIFY_HINT,
+      note: RECEIPT_NOTE,
       ...(malformed ? { malformed_entry: {
         reason: "This entry was written on 2026-08-21 by a canonicalization bug that emitted a literal `undefined` for an absent field, so its stored record is not valid JSON and cannot be re-derived. The leaf and the tree are untouched; the entry stays in the log because an append-only log is never rewritten. Fixed the same day; entries after index 14 are clean.",
         raw_record: canonical,
@@ -453,13 +468,21 @@ export async function rlogStatus(env) {
 }
 
 // rate-limit demo per IP (KV, TTL 24h)
+// La quota demo si CONTROLLA prima e si CONSUMA solo dopo un sigillo riuscito.
+// Prima erano la stessa funzione: cinque body sbagliati chiudevano l'IP per la giornata
+// senza produrre una sola ricevuta (relazione 30/08/2026, difetto 5.3). Effetto collaterale
+// gradito: una put in meno per ogni tentativo fallito, e il budget KV e' stretto.
+const demoKey = (ip) => `rlog:demo:${ip}:${new Date().toISOString().slice(0, 10)}`;
+
 export async function demoAllowed(env, ip) {
-  const day = new Date().toISOString().slice(0, 10);
-  const k = `rlog:demo:${ip}:${day}`;
+  const n = Number((await env.COHERENCE.get(demoKey(ip))) || 0);
+  return n < DEMO_PER_DAY;
+}
+
+export async function demoConsume(env, ip) {
+  const k = demoKey(ip);
   const n = Number((await env.COHERENCE.get(k)) || 0);
-  if (n >= DEMO_PER_DAY) return false;
   await env.COHERENCE.put(k, String(n + 1), { expirationTtl: 90000 });
-  return true;
 }
 
 // ---------- verifica di una ricevuta (pure math: NON legge il KV, non si fida del server) ----------
