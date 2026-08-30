@@ -22,13 +22,13 @@ const WEBAPP = resolve(qui, "../../../GBLIN_WEBAPP/test/x402-golden");
 const SENTINEL = resolve(qui, "../../../GBLIN-Sentinel/test/x402-golden");
 const USCITA = resolve(qui, "../src/x402-challenge.mjs");
 
-// 30/08/2026 — I QUATTRO PERCORSI "GUARDATI" NON SONO PIU' UN CASO A PARTE.
-// La guardia sui parametri e' stata legata alla presenza di un header di pagamento: adesso
-// l'anonimo riceve sempre la sfida 402 (era 400, e per questo il validatore Coinbase li
-// rifiutava e restavano fuori dal catalogo Bazaar), mentre chi paga con parametri sbagliati
-// prende il 400 sull'ORIGINE, prima di verify/settle. Al bordo arrivano solo richieste senza
-// header di pagamento, quindi qui il 400 non serve piu': tutti e 9 i percorsi sono uguali.
-const GUARDATI = {};
+// 30/08/2026 — I QUATTRO PERCORSI "GUARDATI" NON SONO PIU' UN CASO A PARTE, e il codice che li
+// trattava a parte e' stato tolto insieme alle fixture *.paid-params.json che leggeva.
+// La guardia sui parametri e' ora legata alla presenza di un header di pagamento: l'anonimo
+// riceve sempre la sfida 402 (era 400, ed e' per questo che il validatore Coinbase li rifiutava
+// e restavano fuori dal Bazaar), mentre chi paga con parametri sbagliati prende il 400
+// sull'ORIGINE, prima di verify/settle. Al bordo arrivano solo richieste senza header di
+// pagamento: qui il 400 non serve piu' e tutti e nove i percorsi sono uguali.
 
 const leggi = (dir, file) => JSON.parse(readFileSync(`${dir}/${file}`, "utf8"));
 
@@ -37,19 +37,9 @@ function vociWebapp() {
   return nomi.map((nome) => {
     const base = leggi(WEBAPP, `${nome}.json.json`);
     const voce = { chiave: `x402/${nome}` };
-    if (GUARDATI[nome]) {
-      if (base.status !== 400) throw new Error(`${nome}: attesa una guardia 400, trovato ${base.status}`);
-      const pagata = leggi(WEBAPP, `${nome}.paid-params.json`);
-      if (pagata.status !== 402) throw new Error(`${nome}: la fixture con parametri non e' un 402`);
-      voce.requires = GUARDATI[nome];
-      voce.guard400 = base.body;
-      voce.challenge = pagata.body;
-      voce.paymentRequired = pagata.headers["payment-required"];
-    } else {
-      if (base.status !== 402) throw new Error(`${nome}: attesa la sfida 402, trovato ${base.status}`);
-      voce.challenge = base.body;
-      voce.paymentRequired = base.headers["payment-required"];
-    }
+    if (base.status !== 402) throw new Error(`${nome}: attesa la sfida 402, trovato ${base.status}`);
+    voce.challenge = base.body;
+    voce.paymentRequired = base.headers["payment-required"];
     if (!voce.paymentRequired) throw new Error(`${nome}: manca l'header payment-required nella fixture`);
     return voce;
   });
@@ -70,10 +60,6 @@ const voci = [...vociWebapp(), ...vociSentinel()];
 const corpoPaths = voci
   .map((v) => {
     const righe = [`  ${JSON.stringify(v.chiave)}: {`];
-    if (v.requires) {
-      righe.push(`    requires: ${JSON.stringify(v.requires)},`);
-      righe.push(`    guard400: ${JSON.stringify(v.guard400)},`);
-    }
     righe.push(`    challenge: ${JSON.stringify(v.challenge)},`);
     righe.push(`    paymentRequired: ${JSON.stringify(v.paymentRequired)},`);
     righe.push("  },");
@@ -143,12 +129,6 @@ export function x402StaticChallenge(request) {
     return json(JSON.stringify({
       error: "this edge path serves the unpaid challenge only; a request carrying payment must reach the origin",
     }), 421, { "cache-control": "no-store" });
-  }
-
-  // Guard: senza i parametri richiesti si risponde 400, come fa l'origin. Non e' un
-  // dettaglio estetico — e' il messaggio che dice al chiamante che NON e' stato addebitato.
-  if (p.requires && p.requires.some((k) => !url.searchParams.get(k))) {
-    return json(p.guard400, 400);
   }
 
   return json(withMethod(p.challenge, request.method), 402, {
