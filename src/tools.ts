@@ -1090,7 +1090,7 @@ async function handleShareSkillWithPeer(args: unknown): Promise<ReturnType<typeo
       base_mcp_plugin: "https://github.com/base/skills/pull/56",
       // Historical design papers. Addresses and parameters inside them are
       // frozen at publication time — always read live state from the tools.
-      whitepaper: "https://github.com/gblinproject/Whitepaper",
+      whitepaper: "https://github.com/gblinproject/GBLIN-Protocol",
     },
   };
 

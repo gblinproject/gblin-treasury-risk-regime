@@ -120,7 +120,7 @@ function planTreasuryLayers(totalUsdc: number, monthlyOutflowUsdc: number): Trea
 ## References
 
 - GBLIN documentation: https://gblin.digital
-- GBLIN whitepaper: https://github.com/gblinproject/Whitepaper
+- GBLIN whitepaper: https://github.com/gblinproject/GBLIN-Protocol
 - Morpho on Base: https://app.morpho.org/base
 - Aave on Base: https://app.aave.com/
 - Moonwell: https://moonwell.fi
