@@ -75,6 +75,17 @@ const RECEIPT_SCHEMA = {
       },
       required: ["v", "log", "index", "ts", "action", "input_hash"],
     },
+    canonicalization: {
+      type: "object",
+      description: "The serialisation rule these bytes were produced with, named in the receipt itself so a later verifier can recompute them without consulting our repository. Frozen as gblin-canonical-json/1.",
+      properties: {
+        rule: { type: "string", const: "gblin-canonical-json/1" },
+        frozen_since: { type: "string" }, spec: { type: "string" },
+        leaf: { type: "string" }, node: { type: "string" },
+        signed_message: { type: "string" }, verifier: { type: "string" },
+      },
+      required: ["rule", "spec"],
+    },
     leaf: { type: "string", description: "base64 SHA256(0x00 || canonical)" },
     index: { type: "integer" }, tree_size: { type: "integer" },
     root: { type: "string", description: "base64 Merkle root at tree_size" },

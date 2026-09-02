@@ -329,6 +329,25 @@ export async function signedCheckpoint(env, N, root, { withCosignatures = true }
 
 // ---------- append + ricevuta ----------
 const VERIFY_HINT = "offline: see verify-receipt.mjs in github.com/gblinproject/gblin-treasury-risk-regime (zero deps)";
+// Il NOME della regola, dentro la ricevuta. Fino al 02/09/2026 la ricevuta portava il digest
+// canonico ma non diceva COME era stato prodotto: chi riceveva una ricevuta da un terzo doveva
+// trovare questo repo per sapere quali byte ricalcolare. Segnalato da cloudpayX (issue #5) e
+// dichiarato da noi come difetto nostro nella risposta pubblica del 02/09. Sta FUORI dal payload
+// firmato, quindi non tocca leaf, firma ne' albero, e vale anche per le ricevute gia' scritte.
+const CANONICALIZATION = {
+  rule: "gblin-canonical-json/1",
+  frozen_since: "2026-08-21",
+  spec:
+    "Recursive JSON serialisation with no whitespace. Object keys whose value is undefined are dropped; " +
+    "the remaining keys are sorted in UTF-16 code-unit order (JavaScript Array.prototype.sort default) and " +
+    'emitted as "key":value joined by commas. Arrays keep their order. Primitives use standard JSON escaping.',
+  leaf: "SHA256(0x00 || canonical_bytes)",
+  node: "SHA256(0x01 || left || right)",
+  signed_message: 'Ed25519 over the bytes of "gblin-receipt/v1\n" || canonical_bytes',
+  verifier:
+    "https://github.com/gblinproject/gblin-treasury-risk-regime/blob/main/verify-receipt.mjs",
+};
+
 const RECEIPT_NOTE = "Evidence of existence and time in a signed append-only log, root anchored daily on Base (EAS) — NOT a compliance certificate and NOT an endorsement of the content. The action/agent_id/tool/meta strings you send are published in the public log: put identifiers there, never secrets; input/output go in as hashes only. For a PAID seal the record also carries what this server saw of the payment (payer address, amount, authorization nonce): that too is public, and it is on-chain public already.";
 
 export function validateSealInput(body) {
@@ -401,6 +420,7 @@ export async function sealAction(env, input, { demo = false, operator = false, p
     receipt: {
       format: "gblin-receipt/v1",
       payload, canonical_sha256: hex(await sha256(te.encode(canonical))),
+      canonicalization: CANONICALIZATION,
       leaf: b64(leaf), index: N, tree_size: size, root: b64(root),
       signature: b64(sig),
       verifier_key: await rlogVerifierKey(kp.pub),
@@ -444,6 +464,7 @@ export async function getReceipt(env, index) {
       // rilettura (relazione 30/08/2026, difetto 5.2). Non toccano leaf ne' firma: non sono
       // nel payload canonico.
       canonical_sha256: hex(await sha256(te.encode(canonical))),
+      canonicalization: CANONICALIZATION,
       verify: VERIFY_HINT,
       note: RECEIPT_NOTE,
       ...(malformed ? { malformed_entry: {
