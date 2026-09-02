@@ -14,6 +14,16 @@ MCP_DISABLED = "false"
 binding = "COHERENCE"
 id = "7234cbebc57b4312885f1d4365b45173"
 
+# Contatore della superficie gratuita (dal 02/09/2026). Sta in D1, NON in KV, apposta:
+# il tetto free di D1 e' 100.000 righe scritte al giorno contro le 1.000 di KV, ed e' una
+# QUOTA SEPARATA — cosi' il contatore non puo' piu' mettere in pericolo i sigilli giornalieri
+# delle promesse, che vivono su KV. In piu' l'UPSERT di D1 e' atomico, quindi spariscono le
+# perdite da scrittura concorrente che avevamo dichiarato con KV.
+[[d1_databases]]
+binding = "USAGE"
+database_name = "gblin-usage"
+database_id = "befd24a6-1f21-4cc6-ab54-70e954a8d0dc"
+
 # Il battito dell'automa: osserva ogni 10 minuti
 [triggers]
 crons = ["*/10 * * * *"]

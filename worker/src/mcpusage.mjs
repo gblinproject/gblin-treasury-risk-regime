@@ -30,9 +30,9 @@
 
 const GIORNI_TTL = 120 * 86400;
 const LOTTO_MAX = 1000;        // il lotto non forza mai la scrittura: comanda solo l'orologio
-let attesaMs = 3600_000;       // UNA scrittura all'ora per isolate, non di piu'
-const RALLENTA_DOPO = 12;      // dopo 12 scritture (mezza giornata) si passa a 3 ore
-const STOP_DOPO = 20;          // oltre 20 scritture al giorno per isolate si smette
+let attesaMs = 60_000;         // un lotto al minuto per isolate (con D1 il budget lo regge)
+const RALLENTA_DOPO = 240;     // dopo 240 lotti si passa a 5 minuti: freno anti-fuga, non budget
+const STOP_DOPO = 600;         // tetto di sicurezza per isolate, non un limite atteso
 
 // 27/08, ORE 8 DEL MATTINO: Cloudflare ha avvisato che l'account era al 90% del tetto KV
 // giornaliero. Il consumo nuovo era questo contatore, acceso ieri sera: uno scanner esterno
@@ -95,25 +95,25 @@ function daScaricare() {
  * Scarica il lotto su KV: una lettura + una scrittura, sulla chiave del giorno UTC.
  * Non solleva mai: un contatore non deve poter rompere una risposta.
  */
-// ─── SCRITTURE SOSPESE IL 28/08/2026 ────────────────────────────────────────
-// Il 27/08 Cloudflare ha avvisato al 90% del tetto KV; ho messo un freno da 20 scritture
-// al giorno e il 28/08 siamo andati oltre lo stesso. Il freno era sbagliato di concetto:
-// contava PER ISOLATE, e Cloudflare ne fa girare molti — venti scritture ciascuno, per
-// qualche decina di isolate, sono centinaia di scritture al giorno. Il tetto vero non e'
-// per isolate, e con KV non c'e' modo di contarlo globalmente senza usare... KV.
+// ─── STORIA DI QUESTO CONTATORE ────────────────────────────────────────
+// 27/08: Cloudflare avvisa che l'account e' al 90% del tetto KV giornaliero. Il consumo nuovo
+// era questo contatore. 28/08: scritture SOSPESE, perche' il freno che avevo messo (20 scritture
+// per isolate) non limitava niente — Cloudflare fa girare molti isolate, e venti ciascuno fanno
+// comunque centinaia al giorno. Con KV non c'era modo di contarle globalmente senza usare... KV.
 //
-// La priorita' e' dichiarata e non cambia: i sigilli delle promesse vengono prima del
-// contatore. Un conteggio perso e' niente; un sigillo mancato romperebbe la promessa che
-// attestiamo. Quindi il contatore continua ad accumulare in memoria (e /mcp/usage serve i
-// giorni gia' registrati) ma NON scrive piu'.
+// 02/09/2026: RIACCESE, su un contenitore diverso. Il contatore ora scrive su **D1**, non su KV:
+//   - il tetto free di D1 e' 100.000 righe scritte al giorno contro le 1.000 di KV;
+//   - ed e' una QUOTA SEPARATA, quindi il contatore non puo' piu' mettere in pericolo i sigilli
+//     giornalieri delle promesse, che restano su KV.
+// In piu' l'UPSERT di D1 (`n = n + excluded.n`) e' ATOMICO: sparisce la perdita da scrittura
+// concorrente che con KV eravamo costretti a dichiarare (leggi-modifica-scrivi).
 //
-// Cosa abbiamo gia' imparato e che non serve continuare a pagare: due giornate intere
-// misurate, 1.031 e 1.136 chiamate, e ZERO tools/call. Il traffico e' scanner. Sapevamo
-// solo questo e ci serviva solo questo.
+// La priorita' dichiarata NON cambia: i sigilli delle promesse vengono prima del contatore.
+// Semplicemente ora non sono piu' in concorrenza per la stessa quota.
 //
-// Se un giorno vorremo contare davvero, lo strumento giusto e' Analytics Engine, che non
-// consuma scritture KV. Non e' una cosa da fare adesso.
-const SCRITTURE_ATTIVE = false;
+// I giorni gia' registrati su KV (26-28/08, piu' i tentativi di sigillo dal 30/08) restano
+// leggibili: il report li unisce a quelli nuovi.
+const SCRITTURE_ATTIVE = true;
 
 // ECCEZIONE STRETTA (30/08/2026). Con le scritture sospese non sapevamo se qualcuno avesse
 // PROVATO a sigillare e fosse fallito: l'unica domanda che contava restava senza risposta.
@@ -125,37 +125,32 @@ const CHIAVI_SEMPRE = new Set(["http:/v1/seal-demo", "tools/call:receipts.seal"]
 let urgente = false;
 
 export async function scarica(env, forza = false) {
-  if (!env.COHERENCE || buffer.size === 0) return;
-  if (scarichiFatti >= STOP_DOPO) return; // budget dei sigilli prima del contatore
+  if (buffer.size === 0) return;
+  const db = env.USAGE;
+  if (!db) return;                       // nessun D1 collegato (sviluppo locale): non si conta
+  if (scarichiFatti >= STOP_DOPO) return;
   if (!SCRITTURE_ATTIVE && !urgente) return;
   if (!forza && !urgente && !daScaricare()) return;
   if (inCorso) return inCorso;
 
-  // A scritture sospese si porta via SOLO cio' che e' raro e ci serve; il rumore degli
-  // scanner resta nel buffer in memoria e muore con l'isolate, come gia' oggi.
-  const lotto = new Map(
-    SCRITTURE_ATTIVE ? buffer : [...buffer].filter(([k]) => CHIAVI_SEMPRE.has(k)),
-  );
-  if (SCRITTURE_ATTIVE) buffer.clear();
-  else for (const k of lotto.keys()) buffer.delete(k);
+  const lotto = new Map(buffer);
+  buffer.clear();
   urgente = false;
   if (lotto.size === 0) return;
   ultimoScarico = Date.now();
-  // Freno sul budget KV (tetto free 1000 scritture/giorno, ~600 gia' usate dall'osservatore
-  // delle promesse): se questo isolate ha gia' scritto tanto, rallenta invece di consumarlo.
-  if (++scarichiFatti > RALLENTA_DOPO) attesaMs = 10 * 60_000;
+  if (++scarichiFatti > RALLENTA_DOPO) attesaMs = 5 * 60_000;
 
   inCorso = (async () => {
     try {
       const giorno = utcDayKey();
-      const k = chiaveGiorno(giorno);
-      let doc = {};
-      try { doc = JSON.parse((await env.COHERENCE.get(k)) || "{}"); } catch { doc = {}; }
-      for (const [chiave, n] of lotto) doc[chiave] = (doc[chiave] || 0) + n;
-      await env.COHERENCE.put(k, JSON.stringify(doc), { expirationTtl: GIORNI_TTL });
+      const q = db.prepare(
+        "INSERT INTO usage_daily (day,k,n) VALUES (?,?,?) " +
+        "ON CONFLICT(day,k) DO UPDATE SET n = n + excluded.n",
+      );
+      await db.batch([...lotto].map(([k, n]) => q.bind(giorno, k, n)));
     } catch {
-      // KV giu' o quota finita: il lotto e' perso e il totale resta un limite inferiore,
-      // come dichiarato. Non lo rimettiamo nel buffer per non farlo crescere all'infinito.
+      // D1 giu': il lotto e' perso e il totale resta un limite inferiore, come dichiarato.
+      // Non lo rimettiamo nel buffer per non farlo crescere all'infinito.
     } finally {
       inCorso = null;
     }
@@ -184,37 +179,60 @@ export async function scaricoDifferito(env, ms = 2000) {
  * Report pubblico e gratuito: ultimi `giorni` giorni, per chiave.
  */
 export async function usoRecente(env, giorni = 14) {
-  const oggi = new Date();
-  const righe = [];
+  const perGiorno = new Map();   // giorno -> { chiave: n }
   const totali = {};
-  for (let i = 0; i < giorni; i++) {
-    const d = new Date(oggi.getTime() - i * 86400_000);
-    const giorno = utcDayKey(d);
-    let doc = null;
-    try { doc = JSON.parse((await env.COHERENCE.get(chiaveGiorno(giorno))) || "null"); } catch { doc = null; }
-    if (!doc) continue;
-    righe.push({ day: giorno, calls: doc });
-    for (const [k, n] of Object.entries(doc)) totali[k] = (totali[k] || 0) + n;
+  const somma = (giorno, k, n) => {
+    if (!perGiorno.has(giorno)) perGiorno.set(giorno, {});
+    const d = perGiorno.get(giorno);
+    d[k] = (d[k] || 0) + n;
+    totali[k] = (totali[k] || 0) + n;
+  };
+  const daGiorno = utcDayKey(new Date(Date.now() - (giorni - 1) * 86400_000));
+
+  // Sorgente corrente: D1 (dal 02/09/2026).
+  let d1ok = false;
+  if (env.USAGE) {
+    try {
+      const r = await env.USAGE.prepare(
+        "SELECT day, k, n FROM usage_daily WHERE day >= ? ORDER BY day DESC",
+      ).bind(daGiorno).all();
+      for (const row of r.results || []) somma(row.day, row.k, row.n);
+      d1ok = true;
+    } catch { d1ok = false; }
   }
-  const somma = Object.values(totali).reduce((a, b) => a + b, 0);
+
+  // Sorgente storica: i giorni scritti su KV prima del trasloco. Si legge, non si scrive.
+  if (env.COHERENCE) {
+    for (let i = 0; i < giorni; i++) {
+      const giorno = utcDayKey(new Date(Date.now() - i * 86400_000));
+      let doc = null;
+      try { doc = JSON.parse((await env.COHERENCE.get(chiaveGiorno(giorno))) || "null"); } catch { doc = null; }
+      if (!doc) continue;
+      for (const [k, n] of Object.entries(doc)) somma(giorno, k, n);
+    }
+  }
+
+  const righe = [...perGiorno.entries()]
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .map(([day, calls]) => ({ day, calls }));
+
   return {
     surface: "free surfaces: hosted MCP + the public proof endpoints (receipts, log, checkpoints, coherence)",
     window_days: giorni,
-    total_calls: somma,
+    total_calls: Object.values(totali).reduce((a, b) => a + b, 0),
     by_key: totali,
     daily: righe,
     method:
       "Aggregate counts of WHAT was called: for MCP, the JSON-RPC method plus the tool name for tools/call (taken from this server's own fixed list); for HTTP, the free proof endpoints normalised to a fixed set of paths, so an invented path cannot create a new key. Counted since 2026-08-26.",
     not_collected:
       "No IP, no user agent, no caller identity, no arguments, no per-call timestamps. This counts calls, not callers, and there is no way to attribute any of these numbers to a person or an agent.",
-    counting_suspended:
-      "Writing was suspended on 2026-08-28. The per-isolate write cap set the day before did not bound the total: Cloudflare runs many isolates, so a cap of 20 writes each still added up to hundreds a day and pushed the account over the free KV quota — the same quota the daily seals of the public promises depend on. The seals come first. The days already recorded remain readable below.",
-    still_counted:
-      "One narrow exception since 2026-08-30: attempts to CREATE a receipt (http:/v1/seal-demo and tools/call:receipts.seal) are still recorded, because they are rare — units per day, not the hundreds the scanners generate — and because without them we cannot tell whether anyone tried to seal and failed. READ THIS CORRECTLY: for days from 2026-08-30 onward these two keys are the ONLY thing counted, so the totals for those days are NOT traffic totals and must not be compared with the earlier days.",
-    write_budget:
-      "The counter batches to at most one write per hour per isolate, then one per three hours after 12, and stops after 20 in a day. The daily seals of the public promises share the same 1000-writes/day free quota and come first: an uncounted call is a small loss, a missed seal would break the promise we attest. Counts are therefore hourly aggregates, not per-minute.",
+    history:
+      "Counting ran 2026-08-26 to 2026-08-28, was then SUSPENDED because it wrote to the same KV quota the daily seals of the public promises depend on — and the seals come first. Between 2026-08-30 and 2026-09-02 only attempts to create a receipt were recorded, so totals for those days are NOT traffic totals and must not be compared with the others. Full counting resumed on 2026-09-02.",
+    storage:
+      "Counts are written to D1, deliberately not to KV: D1's free allowance is 100,000 written rows per day against KV's 1,000, and it is a SEPARATE quota — so the counter can no longer put the promise seals at risk. Days recorded before the move are still read from KV and merged into this report." +
+      (d1ok ? "" : " WARNING: D1 did not answer for this request, so recent days may be missing here."),
     accuracy:
-      "Lower bound. Counters are buffered in memory per isolate and flushed to storage in batches; an evicted isolate loses its batch and concurrent flushes can overwrite each other. Undercounting is preferred to a precise number we could not defend.",
+      "Lower bound, and less of one than before. Counters are buffered in memory per isolate and flushed in batches, so an evicted isolate still loses its batch. But the D1 upsert (n = n + excluded.n) is atomic, so concurrent flushes no longer overwrite each other — that source of undercount, which we had to declare while on KV, is gone.",
     includes_our_own_traffic:
       "Yes, and this differs from the paid counter. /api/agent-stats excludes GBLIN's own wallets from the organic totals; here there is no caller identity to exclude by, so our own checks and tests are in these numbers too. Read them as an upper bound on outside interest, not a lower one.",
     paid_surface_is_separate: "https://gblin.digital/api/agent-stats",
