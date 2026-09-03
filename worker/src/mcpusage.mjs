@@ -58,6 +58,19 @@ const METODI = new Set([
 ]);
 export const metodoNoto = (m) => (METODI.has(m) ? m : "other");
 
+// ── PERCHE' I TENTATIVI FALLITI (04/09/2026) ────────────────────────────────
+// Il 03/09 il contatore ha registrato 4 chiamate a receipts.seal e il log non ha prodotto
+// nessuna foglia: qualcuno ha provato a sigillare e ha fallito quattro volte. Sapevamo CHE
+// avevano provato, non PERCHE' avessero fallito — e la differenza cambia cosa dobbiamo fare:
+// se il motivo e' "schema", il problema puo' essere NOSTRO (istruzioni poco chiare, campi
+// troppo rigidi) ed e' una cosa che possiamo sistemare; se e' "quota", e' interesse vero.
+// Si conta SOLO il motivo, da un elenco CHIUSO. Niente su chi chiama: nessun IP, nessun
+// user-agent, nessuna identita', nessun argomento. La regola del founder non si tocca.
+const MOTIVI = new Set(["ok", "schema", "quota", "mode", "json", "internal"]);
+export function contaEsito(chiave, motivo) {
+  contaChiamata("esito:" + chiave, MOTIVI.has(motivo) ? motivo : "internal");
+}
+
 // Misurato il 26/08 al primo collaudo: con la soglia a 10 chiamate / 10 minuti, su 12
 // chiamate ne risultavano 5. Non era un errore di conteggio, era il regime sbagliato: le
 // richieste si spargono su piu' isolate, nessuno riempie il lotto e nessuno vive abbastanza
@@ -121,7 +134,14 @@ const SCRITTURE_ATTIVE = true;
 // scanner), quindi passano anche a scritture sospese e costano una manciata di put. Il resto
 // del traffico resta muto. La priorita' dichiarata non cambia: i sigilli delle promesse prima
 // del contatore.
-const CHIAVI_SEMPRE = new Set(["http:/v1/seal-demo", "tools/call:receipts.seal"]);
+const CHIAVI_SEMPRE = new Set([
+  "http:/v1/seal-demo", "tools/call:receipts.seal",
+  // gli esiti sono rari quanto i tentativi: passano anche a scritture strozzate
+  "esito:receipts.seal:ok", "esito:receipts.seal:schema", "esito:receipts.seal:quota",
+  "esito:receipts.seal:mode", "esito:receipts.seal:internal",
+  "esito:seal-demo:ok", "esito:seal-demo:schema", "esito:seal-demo:quota",
+  "esito:seal-demo:json", "esito:seal-demo:internal",
+]);
 let urgente = false;
 
 export async function scarica(env, forza = false) {
@@ -224,6 +244,11 @@ export async function usoRecente(env, giorni = 14) {
     daily: righe,
     method:
       "Aggregate counts of WHAT was called: for MCP, the JSON-RPC method plus the tool name for tools/call (taken from this server's own fixed list); for HTTP, the free proof endpoints normalised to a fixed set of paths, so an invented path cannot create a new key. Counted since 2026-08-26.",
+    outcomes:
+      "Keys beginning with `esito:` record WHY an attempt to create a receipt failed, from a CLOSED list " +
+      "(ok, schema, quota, mode, json, internal). Added 2026-09-04 after four seal attempts produced no leaf: " +
+      "we knew someone had tried and not why, and the difference decides who has to fix something. " +
+      "It counts the reason only — never who: no IP, no user agent, no identity, no arguments.",
     not_collected:
       "No IP, no user agent, no caller identity, no arguments, no per-call timestamps. This counts calls, not callers, and there is no way to attribute any of these numbers to a person or an agent.",
     history:

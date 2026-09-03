@@ -32,7 +32,7 @@ import { catalogTick, catalogReport, catalogFull, observatoryPage, observatoryJs
 import { witnessTick, witnessIndex, witnessLatestNote, witnessAddCheckpoint, witnessHistory, witnessDiscoverLogs, witnessConfiguredLogs, WITNESSED_LOGS } from "./witness.mjs";
 import { x402StaticChallenge } from "./x402-challenge.mjs";
 import { incidentFor, incidentResponse } from "./incidents.mjs";
-import { contaChiamata, metodoNoto, scarica, scaricoDifferito, usoRecente } from "./mcpusage.mjs";
+import { contaChiamata, contaEsito, metodoNoto, scarica, scaricoDifferito, usoRecente } from "./mcpusage.mjs";
 import { sealAction, getReceipt, rlogStatus, demoAllowed, demoConsume, treeRoot, signedCheckpoint, proofFor, verifyReceipt, anchorConsistency, consistencyProof, leaves, pushToWitnesses, witnessState, PROVENANCE_LEVELS, RLOG_ORIGIN } from "./rlog.mjs";
 
 const GBLIN = "0x36C81d7E1966310F305eA637e761Cf77F90852f0";
@@ -942,13 +942,23 @@ async function callTool(rawName, env, args = {}, req = {}) {
       return await coherenceReport(env);
 
     case "receipts.seal": {
-      if (args.mode && args.mode !== "demo") throw Object.assign(new Error("only mode='demo' is available over MCP; paid seals: x402 HTTP endpoint (resource gblin://howto/seal)"), { code: -32602 });
+      if (args.mode && args.mode !== "demo") {
+        contaEsito("receipts.seal", "mode");
+        throw Object.assign(new Error("only mode='demo' is available over MCP; paid seals: x402 HTTP endpoint (resource gblin://howto/seal)"), { code: -32602 });
+      }
       // Il "5/day/IP" era dichiarato in tre posti e non era applicato qui: era una promessa falsa.
       // Ora vale davvero, e come sulla porta HTTP si consuma solo dopo un sigillo riuscito.
       const { ip, ctx } = req;
-      if (!(await demoAllowed(env, ip || "unknown"))) throw Object.assign(new Error("demo limit reached (5/day/IP). For unlimited seals pay $0.01 via x402: POST https://gblin.digital/api/x402/seal"), { code: -32602 });
+      if (!(await demoAllowed(env, ip || "unknown"))) {
+        contaEsito("receipts.seal", "quota");
+        throw Object.assign(new Error("demo limit reached (5/day/IP). For unlimited seals pay $0.01 via x402: POST https://gblin.digital/api/x402/seal"), { code: -32602 });
+      }
       const r = await sealAction(env, args, { demo: true });
-      if (r.status !== 200) throw new Error(r.error);
+      if (r.status !== 200) {
+        contaEsito("receipts.seal", r.status === 400 ? "schema" : "internal");
+        throw new Error(r.error);
+      }
+      contaEsito("receipts.seal", "ok");
       if (ctx) ctx.waitUntil(demoConsume(env, ip || "unknown")); else await demoConsume(env, ip || "unknown");
       return r.receipt;
     }
@@ -1519,10 +1529,14 @@ export default {
     }
     if (url.pathname === "/v1/seal-demo" && request.method === "POST") {
       if (!(await demoAllowed(env, ip))) {
+        contaEsito("seal-demo", "quota");
         return json({ error: "demo limit reached (5/day/IP). For unlimited seals pay $0.01 via x402: POST https://gblin.digital/api/x402/seal" }, 429);
       }
-      let body; try { body = await request.json(); } catch { return json({ error: "invalid JSON" }, 400); }
+      let body;
+      try { body = await request.json(); }
+      catch { contaEsito("seal-demo", "json"); return json({ error: "invalid JSON" }, 400); }
       const r = await sealAction(env, body, { demo: true });
+      contaEsito("seal-demo", r.status === 200 ? "ok" : (r.status === 400 ? "schema" : "internal"));
       // La quota si consuma solo se la ricevuta esiste davvero: un 400 non deve costare un tentativo.
       if (r.status === 200) ctx.waitUntil(demoConsume(env, ip));
       return json(r.status === 200 ? r.receipt : { error: r.error }, r.status, { "cache-control": "no-store" });
