@@ -33,6 +33,7 @@ import { witnessTick, witnessIndex, witnessLatestNote, witnessAddCheckpoint, wit
 import { x402StaticChallenge } from "./x402-challenge.mjs";
 import { incidentFor, incidentResponse } from "./incidents.mjs";
 import { contaChiamata, contaEsito, metodoNoto, scarica, scaricoDifferito, usoRecente } from "./mcpusage.mjs";
+import { registraRimborso, riepilogoRimborsi } from "./rimborsi.mjs";
 import { sealAction, getReceipt, rlogStatus, demoAllowed, demoConsume, treeRoot, signedCheckpoint, proofFor, verifyReceipt, anchorConsistency, consistencyProof, leaves, pushToWitnesses, witnessState, PROVENANCE_LEVELS, RLOG_ORIGIN } from "./rlog.mjs";
 
 const GBLIN = "0x36C81d7E1966310F305eA637e761Cf77F90852f0";
@@ -1511,8 +1512,50 @@ export default {
       // gia' autenticato col CATALOG_TOKEN, quindi a metterlo e' il nostro resource server.
       const payment = parsePaymentObservation(request.headers.get("x-gblin-payment-observed"));
       const r = await sealAction(env, body, { demo: false, operator, payment });
-      return json(r.status === 200 ? r.receipt : { error: r.error }, r.status, { "cache-control": "no-store" });
+      // Il percorso PAGATO non contava nulla: il 05/09 un pagamento senza consegna e' rimasto
+      // invisibile e non siamo riusciti a dire nemmeno COME fosse fallito. Ora si conta il
+      // motivo (mai chi), e se il sigillo fallisce dopo che qualcuno ha pagato, il debito
+      // finisce nel registro dei rimborsi.
+      contaEsito("seal-paid", r.status === 200 ? "ok" : (r.motivo || "schema"));
+      if (r.status !== 200 && payment?.payer && payment?.nonce) {
+        ctx.waitUntil(registraRimborso(env, {
+          nonce: payment.nonce, payer: payment.payer, importo: payment.amount,
+          asset: payment.asset, rete: payment.network,
+          percorso: "/api/x402/seal", motivo: r.motivo || "schema",
+        }));
+      }
+      return json(
+        r.status === 200
+          ? r.receipt
+          : { error: r.error, ...(payment?.nonce ? { paid: true, payment_nonce: payment.nonce,
+              refund: "You paid and received no receipt. This is recorded; quote this nonce to gblin.digital." } : {}) },
+        r.status, { "cache-control": "no-store" });
     }
+    // Esiti del percorso PAGATO riportati dal nostro resource server (la webapp). Serve per i
+    // fallimenti che non arrivano mai qui: corpo illeggibile, metodo sbagliato, noi irraggiungibili.
+    // Protetta col CATALOG_TOKEN: solo il nostro server puo' dichiarare un pagamento non consegnato.
+    if (url.pathname === "/internal/esito" && request.method === "POST") {
+      const tok = url.searchParams.get("token") || "";
+      if (!env.CATALOG_TOKEN || tok !== env.CATALOG_TOKEN) return json({ error: "unauthorized" }, 401);
+      let b; try { b = await request.json(); } catch { return json({ error: "invalid JSON" }, 400); }
+      contaEsito(String(b.chiave || "seal-paid"), String(b.motivo || "internal"));
+      let registrato = false;
+      if (b.pagamento?.payer && b.pagamento?.nonce) {
+        registrato = await registraRimborso(env, {
+          nonce: b.pagamento.nonce, payer: b.pagamento.payer, importo: b.pagamento.amount,
+          asset: b.pagamento.asset, rete: b.pagamento.network,
+          percorso: String(b.percorso || ""), motivo: String(b.motivo || "internal"),
+        });
+      }
+      scaricoDifferito(env, ctx);
+      return json({ ok: true, refund_recorded: registrato }, 200, { "cache-control": "no-store" });
+    }
+
+    // Quanto dobbiamo a chi ha pagato senza ricevere. Conteggi, mai indirizzi.
+    if (url.pathname === "/refunds" && (request.method === "GET" || request.method === "HEAD")) {
+      return json(await riepilogoRimborsi(env), 200, { "cache-control": "public, max-age=300" });
+    }
+
     // Rotte POST-only che PUBBLICHIAMO: se le si interroga col metodo sbagliato devono dire
     // "metodo sbagliato", non "non esiste". Prima cadevano nel 404 catch-all in fondo, e un crawler
     // che sonda in GET si sentiva rispondere che la rotta non c'e' (corretto il 23/08/2026).

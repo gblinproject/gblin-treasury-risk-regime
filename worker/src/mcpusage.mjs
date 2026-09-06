@@ -66,7 +66,11 @@ export const metodoNoto = (m) => (METODI.has(m) ? m : "other");
 // troppo rigidi) ed e' una cosa che possiamo sistemare; se e' "quota", e' interesse vero.
 // Si conta SOLO il motivo, da un elenco CHIUSO. Niente su chi chiama: nessun IP, nessun
 // user-agent, nessuna identita', nessun argomento. La regola del founder non si tocca.
-const MOTIVI = new Set(["ok", "schema", "quota", "mode", "json", "internal"]);
+// Lista CHIUSA. Allargata il 06/09 con i tre modi in cui puo' fallire una chiamata PAGATA:
+// metodo sbagliato, servizio a valle muto, configurazione nostra mancante. Senza questi, un
+// pagamento senza consegna restava invisibile — e il 05/09 ce n'e' stato uno.
+const MOTIVI = new Set(["ok", "schema", "quota", "mode", "json", "internal",
+                        "metodo", "upstream", "config"]);
 export function contaEsito(chiave, motivo) {
   contaChiamata("esito:" + chiave, MOTIVI.has(motivo) ? motivo : "internal");
 }

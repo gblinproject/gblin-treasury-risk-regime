@@ -37,7 +37,9 @@ function vociWebapp() {
   return nomi.map((nome) => {
     const base = leggi(WEBAPP, `${nome}.json.json`);
     const voce = { chiave: `x402/${nome}` };
-    if (base.status !== 402) throw new Error(`${nome}: attesa la sfida 402, trovato ${base.status}`);
+    // seal risponde 402 solo al POST: la sua fixture va catturata con quel verbo (capture.mjs).
+    if (base.status !== 402) throw new Error(`${nome}: attesa la sfida 402, trovato ${base.status}` +
+      (nome === "seal" ? " — seal e' POST-only: la fixture va catturata in POST" : ""));
     voce.challenge = base.body;
     voce.paymentRequired = base.headers["payment-required"];
     if (!voce.paymentRequired) throw new Error(`${nome}: manca l'header payment-required nella fixture`);
@@ -117,6 +119,16 @@ const json = (body, status, extra = {}) => new Response(body, {
   },
 });
 
+// Percorsi che accettano un solo verbo. Il corpo deve restare IDENTICO a quello della rotta
+// sull'origin (GBLIN_WEBAPP/src/app/api/x402/seal/route.ts, funzione soloPost): se cambia li',
+// va cambiato qui. Nato il 06/09/2026: con la chiave path-only il pagamento veniva regolato su
+// QUALUNQUE metodo e una GET pagata finiva su un 405 — pagato, e in mano niente.
+const SOLO_POST = new Set(["x402/seal"]);
+const SOLO_POST_BODY = JSON.stringify({
+  error: "POST only",
+  how: "POST JSON {action, input_hash, output_hash?, agent_id?, tool?, meta?} with x402 payment ($0.01). Free demo (5/day/IP): POST https://gblin-mcp.gblin-mcp-worker.workers.dev/v1/seal-demo. Docs: /api/x402/llms.txt",
+});
+
 export function x402StaticChallenge(request) {
   const url = new URL(request.url);
   const name = nameFromPath(url.pathname);
@@ -129,6 +141,13 @@ export function x402StaticChallenge(request) {
     return json(JSON.stringify({
       error: "this edge path serves the unpaid challenge only; a request carrying payment must reach the origin",
     }), 421, { "cache-control": "no-store" });
+  }
+
+  // seal accetta SOLO POST. Fuori dal POST l'origin non chiede piu' il pagamento e risponde
+  // 405: il bordo deve dire la stessa cosa. OPTIONS resta fuori, lo serve il ramo CORS.
+  if (SOLO_POST.has(name) && request.method !== "POST") {
+    if (request.method === "OPTIONS") return null;
+    return json(SOLO_POST_BODY, 405, { "allow": "POST", "cache-control": "public, max-age=300" });
   }
 
   return json(withMethod(p.challenge, request.method), 402, {

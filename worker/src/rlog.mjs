@@ -376,10 +376,12 @@ export function validateSealInput(body) {
 }
 
 export async function sealAction(env, input, { demo = false, operator = false, payment = null } = {}) {
-  if (!env.COHERENCE) return { status: 503, error: "log storage unavailable" };
-  if (!env.RLOG_KEY) return { status: 503, error: "log key not armed" };
+  // `motivo` viene dalla lista chiusa dei contatori: serve a chi conta l'esito di una
+  // chiamata PAGATA senza dover indovinare la causa dal testo dell'errore.
+  if (!env.COHERENCE) return { status: 503, error: "log storage unavailable", motivo: "config" };
+  if (!env.RLOG_KEY) return { status: 503, error: "log key not armed", motivo: "config" };
   const v = validateSealInput(input);
-  if (v.errs.length) return { status: 400, error: v.errs.join("; ") };
+  if (v.errs.length) return { status: 400, error: v.errs.join("; "), motivo: "schema" };
 
   const N = Number((await env.COHERENCE.get("rlog:size")) || 0);
   const payload = {
