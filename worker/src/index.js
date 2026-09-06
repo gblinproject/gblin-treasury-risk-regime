@@ -1517,6 +1517,10 @@ export default {
       // motivo (mai chi), e se il sigillo fallisce dopo che qualcuno ha pagato, il debito
       // finisce nel registro dei rimborsi.
       contaEsito("seal-paid", r.status === 200 ? "ok" : (r.motivo || "schema"));
+      // Scrittura FORZATA e subito: un sigillo pagato e' un evento isolato, il lotto non si
+      // riempie mai e il buffer per-isolate viene sfrattato prima dell'orologio. La prima volta
+      // che e' successo (06/09) abbiamo perso l'esito della prima chiamata pagata vera.
+      ctx.waitUntil(scarica(env, true));
       if (r.status !== 200 && payment?.payer && payment?.nonce) {
         ctx.waitUntil(registraRimborso(env, {
           nonce: payment.nonce, payer: payment.payer, importo: payment.amount,
@@ -1547,7 +1551,7 @@ export default {
           percorso: String(b.percorso || ""), motivo: String(b.motivo || "internal"),
         });
       }
-      scaricoDifferito(env, ctx);
+      ctx.waitUntil(scarica(env, true));   // vale lo stesso: e' un fallimento pagato, non si perde
       return json({ ok: true, refund_recorded: registrato }, 200, { "cache-control": "no-store" });
     }
 

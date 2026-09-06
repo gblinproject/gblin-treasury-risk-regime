@@ -145,6 +145,14 @@ const CHIAVI_SEMPRE = new Set([
   "esito:receipts.seal:mode", "esito:receipts.seal:internal",
   "esito:seal-demo:ok", "esito:seal-demo:schema", "esito:seal-demo:quota",
   "esito:seal-demo:json", "esito:seal-demo:internal",
+  // IL PERCORSO PAGATO. Aggiunto il 06/09/2026 dopo il primo sigillo pagato post-correzione:
+  // il conteggio era rimasto nel buffer per-isolate ed e' MORTO con l'isolate, perche' un
+  // sigillo pagato e' un evento isolato e non riempie mai un lotto. Cioe' il contatore nato
+  // per rendere visibili i fallimenti pagati e' sparito alla prima chiamata pagata.
+  // Questi sono i piu' rari di tutti: devono scriversi subito, sempre.
+  "esito:seal-paid:ok", "esito:seal-paid:schema", "esito:seal-paid:json",
+  "esito:seal-paid:metodo", "esito:seal-paid:upstream", "esito:seal-paid:config",
+  "esito:seal-paid:internal",
 ]);
 let urgente = false;
 
