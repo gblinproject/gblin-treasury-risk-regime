@@ -55,3 +55,6 @@ scripts/test-local.ts
 
 # graphify (knowledge graph locale, non versionato)
 graphify-out/
+
+# Pacchetti npm impacchettati in locale (artefatti di `npm pack`)
+*.tgz

@@ -255,7 +255,7 @@ export async function usoRecente(env, giorni = 14) {
     by_key: totali,
     daily: righe,
     method:
-      "Aggregate counts of WHAT was called: for MCP, the JSON-RPC method plus the tool name for tools/call (taken from this server's own fixed list); for HTTP, the free proof endpoints normalised to a fixed set of paths, so an invented path cannot create a new key. Counted since 2026-08-26.",
+      "Aggregate counts of WHAT was called: for MCP, the JSON-RPC method plus the tool name for tools/call (taken from this server's own fixed list; a name that exists only in our stdio npm package is counted as tools/call:stdio-only:<name> since 2026-09-10, so a client that learned the stdio names from the ERC-8004 registration or the README can be told apart from a fuzzer — the names are ours, not the caller's); for HTTP, the free proof endpoints normalised to a fixed set of paths, so an invented path cannot create a new key. Counted since 2026-08-26.",
     outcomes:
       "Keys beginning with `esito:` record WHY an attempt to create a receipt failed, from a CLOSED list " +
       "(ok, schema, quota, mode, json, internal). Added 2026-09-04 after four seal attempts produced no leaf: " +

@@ -48,7 +48,9 @@ const FALLBACK_RPCS = [
 ];
 const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.7.1" };
+// Bumped on EVERY deploy from 2026-09-10 (it sat at 0.7.1 through eight deploys). The
+// authoritative identifier of the surface remains manifest_hash in /meta.
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.10.0" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -922,6 +924,25 @@ const LEGACY_TOOL_NAMES = {
   "receipts.entry.verify": "receipts.verify",
 };
 
+// Tool names that exist ONLY in the stdio npm package (@gblin-protocol/mcp-server). A client
+// that learned them from the ERC-8004 registration, the README or the npm page and calls them
+// here gets "Unknown tool" — 199 such calls arrived on 2026-09-10 alone. Two consequences:
+// (a) the error now says WHERE the tool lives and what the closest thing here is;
+// (b) /mcp/usage counts them as tools/call:stdio-only:<name> — the names are OURS (closed
+//     list), so counting them reveals nothing about the caller, and separates a disoriented
+//     client from a fuzzer. Keep in sync with TOOL_DEFINITIONS in ../src/tools.ts.
+const STDIO_ONLY_TOOLS = {
+  get_treasury_state: "paid HTTP endpoint GET https://gblin.digital/api/x402/treasury-state (x402, $0.001); free summary via protocol.info",
+  quote_safe_swap: "paid HTTP endpoint GET https://gblin.digital/api/x402/quote?direction=buy|sell&amount=<n> (x402, $0.001)",
+  swap_gblin_to_usdc_jit: "paid HTTP endpoint GET https://gblin.digital/api/x402/jit (x402, $0.005); the swap itself needs a signer, which this server never has",
+  invest_usdc_to_gblin: "paid HTTP endpoint GET https://gblin.digital/api/x402/invest (x402, $0.002); the transaction itself needs a signer",
+  analyze_treasury_health: "paid HTTP endpoint GET https://gblin.digital/api/x402/health (x402, $0.002)",
+  get_governance_state: "paid HTTP endpoint GET https://gblin.digital/api/x402/governance (x402, $0.001); timelock and owner addresses are also in protocol.info (free)",
+  share_skill_with_peer: "no equivalent here; protocol.info returns the same llms.txt the skill points to",
+  find_keeper_bounty: "no equivalent here; see https://gblin.digital/keepers",
+  verify_risk_attestation: "no equivalent here: verification is pure EIP-712 math, see resource gblin://howto/attestation and gblin://keys for the attestor address",
+};
+
 async function callTool(rawName, env, args = {}, req = {}) {
   const name = LEGACY_TOOL_NAMES[rawName] || rawName;
   switch (name) {
@@ -975,8 +996,16 @@ async function callTool(rawName, env, args = {}, req = {}) {
       return howtoSeal();
     case "how_to_buy_live_attestation": // unlisted alias -> resource gblin://howto/attestation (remove after 2026-09-21)
       return howtoAttestation();
-    default:
-      throw Object.assign(new Error(`Unknown tool: ${name}`), { code: -32602 });
+    default: {
+      const here = TOOLS.map((t) => t.name).join(", ");
+      if (Object.prototype.hasOwnProperty.call(STDIO_ONLY_TOOLS, name)) {
+        throw Object.assign(new Error(
+          `Unknown tool here: "${name}" exists only in the stdio npm package @gblin-protocol/mcp-server ` +
+          `(run: npx @gblin-protocol/mcp-server). This hosted server has ${TOOLS.length} tools: ${here}. ` +
+          `Closest equivalent: ${STDIO_ONLY_TOOLS[name]}.`), { code: -32602 });
+      }
+      throw Object.assign(new Error(`Unknown tool: ${name}. Tools on this server: ${here}. Legacy names accepted: see GET /meta (legacy_tool_aliases).`), { code: -32602 });
+    }
   }
 }
 
@@ -1209,7 +1238,8 @@ async function handleMessage(msg, env, req = {}) {
     if (method === "tools/call") {
       const richiesto = params && params.name;
       const risolto = LEGACY_TOOL_NAMES[richiesto] || richiesto;
-      contaChiamata("tools/call", TOOLS.some((t) => t.name === risolto) ? risolto : "unknown");
+      contaChiamata("tools/call", TOOLS.some((t) => t.name === risolto) ? risolto
+        : (Object.prototype.hasOwnProperty.call(STDIO_ONLY_TOOLS, risolto) ? `stdio-only:${risolto}` : "unknown"));
     } else if (method !== "notifications/initialized") {
       contaChiamata(metodoNoto(method)); // elenco chiuso: un metodo inventato non crea una chiave
     }
