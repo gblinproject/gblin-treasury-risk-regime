@@ -1050,7 +1050,7 @@ const SURFACE_META = {
   tool_count: 8,
   paid_over_mcp: false,
   sibling_package: {
-    name: "@gblin-protocol/mcp-server", version: "0.3.1", transport: "stdio (npm)", tool_count: 13,
+    name: "@gblin-protocol/mcp-server", version: "0.3.2", transport: "stdio (npm)", tool_count: 13,
     note: "Different, larger tool set: the 10 treasury/governance tools (get_treasury_state, quote_safe_swap, swap_gblin_to_usdc_jit, invest_usdc_to_gblin, analyze_treasury_health, get_governance_state, share_skill_with_peer, find_keeper_bounty, verify_risk_attestation) plus get_market_risk_regime, and 3 receipts tools (seal_action_demo, get_receipt, how_to_seal_paid). Only the risk-regime read and the receipt read behave identically here (as risk.regime / receipts.get); this hosted server adds receipts.verify and the GET audit surface. The stdio package keeps flat snake_case names.",
   },
   resources: ["gblin://howto/attestation", "gblin://howto/seal", "gblin://limits", "gblin://keys"],

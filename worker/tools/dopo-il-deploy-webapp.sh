@@ -1,5 +1,5 @@
 #!/bin/bash
-# Da lanciare UNA VOLTA dopo che il founder ha ridistribuito GBLIN_WEBAPP su Vercel.
+# Da lanciare UNA VOLTA dopo che il founder ha ridistribuito GBLIN_WEBAPP o GBLIN-Sentinel su Vercel.
 #
 # PERCHE' SERVE: le sfide 402 anonime le serve il Worker al bordo, da un modulo GENERATO dalle
 # fixture golden. Il 30/08/2026 abbiamo aggiunto `extensions.bazaar` alle sfide di /api/x402/seal
@@ -10,8 +10,9 @@ set -e
 cd "$(dirname "$0")/.."
 R=~/Documents/GitHub
 
-echo "1/4  ricattura le fixture dall'origine appena ridistribuita"
+echo "1/4  ricattura le fixture dall'origine appena ridistribuita (webapp E sentinel: il bordo serve entrambi)"
 (cd "$R/GBLIN_WEBAPP/test/x402-golden" && node capture.mjs)
+(cd "$R/GBLIN-Sentinel/test/x402-golden" && node capture.mjs)
 
 echo "2/4  rigenera il modulo delle sfide del bordo dalle fixture dei due repo"
 node tools/genera-sfide.mjs
