@@ -1124,7 +1124,7 @@ async function handleShareSkillWithPeer(args: unknown): Promise<ReturnType<typeo
 const FIND_KEEPER_BOUNTY_DEFINITION = {
   name: "find_keeper_bounty",
   description:
-    "Check if there is a profitable rebalance opportunity on GBLIN right now. GBLIN PAYS the caller 0.0001 ETH (~$0.30) to rebalance its treasury pool when it drifts. The swap uses the contract's own funds; the caller only pays gas. Returns ready-to-send calldata and the expected reward. Use this when an AI agent wants to earn passive ETH income as a keeper on Base. Costs $0.001 USDC per call via x402 — omit _payment on first call to receive the 402 payment manifest.",
+    "Check if there is a profitable rebalance opportunity on GBLIN right now. GBLIN pays the caller an on-chain bounty for rebalancing its treasury when it drifts: 0.05% of the rebalanced ETH value (up to double with recent volume), floor 0.00005 ETH, cap 0.01 ETH, at most once per hour and only while the stability fund covers it — the tool reads these rules from the contract at call time. The swap uses the contract's own funds; the caller only pays gas. Returns ready-to-send calldata, the estimated reward, and whether the reward is actually payable right now (rewardGate). Use this when an AI agent wants to earn passive ETH income as a keeper on Base. Costs $0.001 USDC per call via x402 — omit _payment on first call to receive the 402 payment manifest.",
   inputSchema: {
     type: "object" as const,
     properties: {

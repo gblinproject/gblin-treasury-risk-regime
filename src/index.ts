@@ -4,7 +4,7 @@
  *
  * Speaks the Model Context Protocol over stdio. Clients (desktop assistants,
  * AgentKit, Eliza, custom agents) discover and invoke the GBLIN tools listed
- * in TOOL_DEFINITIONS (13 as of 0.3.1: treasury/governance, risk regime,
+ * in TOOL_DEFINITIONS (13 as of 0.3.2: treasury/governance, risk regime,
  * risk attestation verification and the receipts trio).
  *
  * IMPORTANT: never write to stdout via console.log — that channel is reserved

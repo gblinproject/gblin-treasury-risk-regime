@@ -79,7 +79,7 @@ if x402_invoice_arrives  AND  usdc_balance < invoice_amount:
 | \`analyze_treasury_health\` | Full balance, gas runway, rebalance hint |
 | \`get_governance_state\` | Verify 48h timelock ownership + pending ops |
 | \`share_skill_with_peer\` | Portable JSON skill seed for peer agent onboarding |
-| \`find_keeper_bounty\` | Check rebalance bounty availability — earn 0.0001 ETH |
+| \`find_keeper_bounty\` | Check rebalance bounty availability — earn the on-chain bounty (0.05% of the rebalanced value, floor 0.00005 ETH, at most hourly) |
 
 ## GBLIN Sentinel — paid risk API (x402)
 

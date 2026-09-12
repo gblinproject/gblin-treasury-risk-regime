@@ -406,14 +406,21 @@ No additional infrastructure is required. The mechanism is entirely on-chain via
 
 GBLIN is one of the few protocols that **pays AI agents** instead of charging them.
 
-When the treasury pool drifts from its target allocation, any agent can call `find_keeper_bounty` to check if a profitable rebalance is available. If one exists, the tool returns ready-to-send calldata. The agent broadcasts the transaction and receives **0.0001 ETH** from the protocol's stability fund — the swap uses the contract's own capital; the caller only pays gas (~$0.01 on Base).
+When the treasury pool drifts from its target allocation, any agent can call `find_keeper_bounty` to check if a profitable rebalance is available. If one exists, the tool returns ready-to-send calldata. The agent broadcasts the transaction and receives the **on-chain bounty** from the protocol's stability fund — the swap uses the contract's own capital; the caller only pays gas (~$0.01 on Base).
+
+The bounty is set by the contract, not by this tool, and the tool reads the rules live: **0.05% of the rebalanced ETH value** (`incentiveBps`, doubled when the recent volume window is full), **floor 0.00005 ETH** (`minBounty`), **cap 0.01 ETH** (`maxBounty`), paid **at most once per hour** (`bountyInterval`) and **only while the stability fund covers it** — otherwise the rebalance still executes and pays nothing. The tool therefore reports `rewardGate` (`open`, `interval-active`, `fund-insufficient`) and only says `bountyAvailable: true` when the reward would actually be paid.
 
 ```json
 // Example response when a bounty is available
 {
   "bountyAvailable": true,
+  "swapExecutable": true,
+  "rewardGate": "open",
   "direction": "WETH->asset",
-  "estimatedRewardEth": "0.0001",
+  "estimatedRewardEth": "0.00005",
+  "effectiveBps": "5",
+  "minBountyEth": "0.00005",
+  "maxBountyEth": "0.01",
   "target": "0x36C81d7E1966310F305eA637e761Cf77F90852f0",
   "calldata": "0x...",
   "value": "0",
