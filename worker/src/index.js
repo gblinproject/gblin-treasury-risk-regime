@@ -25,7 +25,7 @@
  */
 
 import { catalogTick, catalogReport, catalogFull, observatoryPage, observatoryJson, observatoryBadge } from "./catalog.mjs";
-import { vmWatchDue, vmWatchTick } from "./vmwatch.mjs";
+import { vmWatchDue, vmWatchTick, vmWatchTest } from "./vmwatch.mjs";
 // 18/08/2026: WITNESS (src/witness.mjs) — cofirma i checkpoint di log di
 // trasparenza terzi (C2SP tlog-cosignature v1). Primo log: markovianprotocol.com,
 // su loro invito. Zero costo: 1 lettura + 1 firma per tick; niente chain.
@@ -51,7 +51,7 @@ const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // Bumped on EVERY deploy from 2026-09-10 (it sat at 0.7.1 through eight deploys). The
 // authoritative identifier of the surface remains manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.10.1" };
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.10.2" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -1629,6 +1629,15 @@ export default {
       const tok = url.searchParams.get("token") || "";
       if (!env.CATALOG_TOKEN || tok !== env.CATALOG_TOKEN) return json({ error: "unauthorized" }, 401);
       return json(await pushToWitnesses(env, { force: url.searchParams.get("force") === "1" }), 200, { "cache-control": "no-store" });
+    }
+    if (url.pathname === "/internal/vmwatch-test" && request.method === "POST") {
+      const tok = request.headers.get("x-internal-token") || "";
+      if (!env.CATALOG_TOKEN || tok !== env.CATALOG_TOKEN) return json({ error: "unauthorized" }, 401);
+      try {
+        return json(await vmWatchTest(env), 200, { "cache-control": "no-store" });
+      } catch (e) {
+        return json({ sent: false, error: e && e.message }, 502, { "cache-control": "no-store" });
+      }
     }
     if (url.pathname === "/log/witnesses" && request.method === "GET") {
       return json({

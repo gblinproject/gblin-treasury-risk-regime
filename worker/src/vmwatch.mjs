@@ -53,6 +53,14 @@ export async function probe(now = Date.now()) {
   return "";
 }
 
+/** Sends one message through the alert path, to prove the channel end to end. */
+export async function vmWatchTest(env) {
+  if (!env.VM_WATCH_TELEGRAM_TOKEN || !env.VM_WATCH_TELEGRAM_CHAT) return { sent: false, reason: "not configured" };
+  const problem = await probe();
+  await notify(env, `Test of the Aureus liveness alert (sent from the Worker). Current check: ${problem || "Aureus is reporting normally"}.`);
+  return { sent: true, current: problem || "live" };
+}
+
 export async function vmWatchTick(env) {
   if (!env.VM_WATCH_TELEGRAM_TOKEN || !env.VM_WATCH_TELEGRAM_CHAT || !env.COHERENCE) return;
   const now = Date.now();
