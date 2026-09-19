@@ -25,6 +25,7 @@
  */
 
 import { catalogTick, catalogReport, catalogFull, observatoryPage, observatoryJson, observatoryBadge } from "./catalog.mjs";
+import { vmWatchDue, vmWatchTick } from "./vmwatch.mjs";
 // 18/08/2026: WITNESS (src/witness.mjs) — cofirma i checkpoint di log di
 // trasparenza terzi (C2SP tlog-cosignature v1). Primo log: markovianprotocol.com,
 // su loro invito. Zero costo: 1 lettura + 1 firma per tick; niente chain.
@@ -50,7 +51,7 @@ const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // Bumped on EVERY deploy from 2026-09-10 (it sat at 0.7.1 through eight deploys). The
 // authoritative identifier of the surface remains manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.10.0" };
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.10.1" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -1882,6 +1883,9 @@ export default {
       }
       await coherenceObserve(env);
       await pushToWitnesses(env).catch((e) => console.error("witness push:", e && e.message));
+      if (vmWatchDue()) {
+        await vmWatchTick(env).catch((e) => console.error("vm watch:", e && e.message));
+      }
       if (env.COHERENCE) {
         const today = utcDay();
         const marker = await env.COHERENCE.get("attest:lastRun");
