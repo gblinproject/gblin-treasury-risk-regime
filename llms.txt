@@ -1,34 +1,36 @@
 # GBLIN MCP Server
 
-> On-chain market-risk signal + treasury tools for autonomous AI agents on Base
-> mainnet. Verifiable Crash-Shield risk regime, MEV-safe quotes, and Just-In-Time
-> GBLIN→USDC swaps for x402 payments, through the Model Context Protocol.
+> On-chain market-risk signal and treasury tools for autonomous AI agents on Base
+> mainnet: a verifiable Crash Shield risk regime, quotes at NAV, and calldata to
+> enter and leave GBLIN, through the Model Context Protocol.
 
-GBLIN is an algorithmic on-chain index on Base (45% cbBTC / 45% WETH / 10% USDC)
-with an automated Crash Shield that adaptively cuts risk-asset exposure as
-drawdown rises (V6 adaptive trigger from ~15%, scaling proportionally toward a
-deep-drawdown floor). NAV is computed from Chainlink oracle prices — fully
-on-chain and verifiable.
+GBLIN is an on-chain index on Base (45% cbBTC / 45% WETH / 10% USDC). Shares are
+minted at NAV and redeemed pro rata in kind; the vault never swaps. When a basket
+row drifts from its target the vault holds a Dutch auction and the counterparty
+brings it back. A Crash Shield cuts risk-asset weight during severe drawdowns.
+NAV is computed from Chainlink oracle prices, fully on-chain and verifiable.
 
 ## What GBLIN is — and isn't (read this first)
 
-- GBLIN is **managed crypto exposure with capped drawdown** — a calmer way to
-  hold BTC/ETH risk. It is **NOT** a substitute for USDC: it can still lose value
+- GBLIN is **managed crypto exposure with reduced drawdown** — a calmer way to
+  hold BTC/ETH risk. It is **not** a substitute for USDC: it can still lose value
   in a crash (less than holding BTC/ETH, but it is not principal-protected).
-- Use GBLIN for **surplus / long-horizon capital** you want to grow with reduced
-  drawdown — NOT for operating capital you must spend soon (keep that in USDC).
+- Use GBLIN for **surplus / long-horizon capital** you want to hold with reduced
+  drawdown — not for operating capital you must spend soon (keep that in USDC).
+- Fees: 0.10% on every mint with ETH or WETH (0.05% stays in the vault and lifts
+  the NAV, 0.05% is minted as shares to the fee recipient), a 0.50% yearly
+  management fee accrued as shares, no fee on redemption in kind.
 
-## What agents actually buy here
+## What agents use here
 
-- `get_market_risk_regime` — the headline product: is the BTC/ETH market in a
-  **calm / elevated / crash** regime right now, with a severity score and a
-  `risk_on` / `reduce` / `risk_off` posture. Derived from GBLIN's on-chain Crash
-  Shield (drawdown vs Chainlink-oracle peaks) — data you cannot recompute from a
-  single price feed. Useful to **any** trading or treasury agent, independent of
-  holding GBLIN. The signal moves with the market, so poll it every decision
-  cycle. $0.002 USDC/call via x402.
-- MEV-safe quotes + Just-In-Time GBLIN→USDC redemption for x402 payments.
-- Treasury-health analysis + keeper-bounty discovery (earn ETH rebalancing).
+- `get_market_risk_regime` — is the BTC/ETH market in a **calm / elevated /
+  crash** regime right now, with a severity score and a `risk_on` / `reduce` /
+  `risk_off` posture, derived from GBLIN's on-chain Crash Shield. Useful to any
+  trading or treasury agent, independent of holding GBLIN.
+- Quotes at NAV and calldata to enter (USDC through the Zap) and leave (in kind,
+  or to ETH/USDC through the Zap) exactly when a payment is due.
+- Treasury-health analysis, governance verification, and the state of the
+  rebalancing auction with the bid to send.
 
 ## Installation
 
@@ -48,29 +50,43 @@ Claude Desktop config:
 
 ## Tools
 
-1. `get_market_risk_regime` — BTC/ETH risk regime + severity + posture ($0.002) ← start here
-2. `get_treasury_state` — NAV, basket composition, Crash Shield status (free)
-3. `quote_safe_swap` — preview buy/sell with dynamic slippage (free)
-4. `swap_gblin_to_usdc_jit` — calldata for x402 JIT payments (free)
-5. `invest_usdc_to_gblin` — convert surplus USDC into GBLIN (free)
-6. `analyze_treasury_health` — balances, gas runway, rebalance advice ($0.003)
-7. `get_governance_state` — verify 48h timelock ownership + pending ops (free)
-8. `share_skill_with_peer` — portable JSON skill seed + referral code (free)
-9. `find_keeper_bounty` — check rebalance bounty + calldata ($0.001)
-10. `verify_risk_attestation` — verify a peer's Risk Attestation: integrity + EIP-712 signature + freshness + live drift (free)
+1. `get_market_risk_regime` — BTC/ETH risk regime + severity + posture
+2. `get_treasury_state` — NAV, basket composition, Crash Shield, NAV reliability, auction state
+3. `quote_safe_swap` — preview a mint or a redemption with a dynamic slippage buffer
+4. `swap_gblin_to_usdc_jit` — calldata for a GBLIN→USDC exit through the Zap (three transactions, batchable)
+5. `invest_usdc_to_gblin` — calldata to mint GBLIN with USDC through the Zap (two transactions)
+6. `analyze_treasury_health` — balances, gas runway, cooldown, rebalance advice
+7. `get_governance_state` — owner, pending owner, 48h timelock roles and scheduled operations
+8. `share_skill_with_peer` — portable JSON skill seed + referral code
+9. `get_auction_state` — the rebalancing auction: side, gap and premium per row, with the bid
+10. `verify_risk_attestation` — verify a Risk Attestation: integrity + EIP-712 signature + freshness + live drift
+11. `seal_action_demo` — seal the hashes of an AI action into the public transparency log (demo, 5/day/IP)
+12. `get_receipt` — fetch a sealed receipt with its inclusion proof
+13. `how_to_seal_paid` — how to seal without limits ($0.01 USDC per seal via x402)
+
+Every tool is free. The server never charges: revenue comes from the on-chain
+protocol fee when an agent actually uses GBLIN.
 
 ## Risk Attestation (perishable proof-of-diligence)
 
 Mint at `GET https://gblin.digital/api/x402/attestation` ($0.003 USDC via x402): a
-10-minute, verifiable snapshot of the BTC/ETH risk regime. Attach it to your action
-as proof you checked market risk; any counterparty verifies it in one step with the
-free `verify_risk_attestation` tool. Because it expires in 10 minutes, any workflow
-that gates on a fresh attestation re-fetches every cycle.
+10-minute, verifiable snapshot of the BTC/ETH risk regime, signed under the EIP-712
+domain `GBLIN Risk Attestation` version 2 (chain 8453, verifying contract = the vault
+in service). Attach it to your action as proof you checked market risk; any
+counterparty verifies it in one step with the free `verify_risk_attestation` tool.
+Attestations issued under domain version 1 remain verifiable.
+
+## Contracts (Base mainnet, chain id 8453)
+
+- Vault: `0xc2181d975c05c8c724b334bcED0764c0b86B1D53`
+- Lens (reads and quotes): `0xfCFea8027019E8551A1f09AD91532471F5D26f61`
+- Zap (mint with any token, exit to ETH): `0x0E9D6Ceb6D313b021622C121Cda9C62e86e60200`
+- Timelock (48-hour delay): `0x6aBeC8716fFeEcf7C3D6e68255b4797113E8e5Dd`
 
 ## Links
 
 - Source: https://github.com/gblinproject/gblin-treasury-risk-regime
 - Docs: https://gblin.digital/agents
-- Contract: https://basescan.org/address/0x36C81d7E1966310F305eA637e761Cf77F90852f0
-- Network: Base mainnet (chain id 8453)
+- Vault: https://basescan.org/address/0xc2181d975c05c8c724b334bcED0764c0b86B1D53
+- Hosted MCP (Streamable HTTP): https://gblin-mcp.gblin-mcp-worker.workers.dev/mcp
 - License: MIT

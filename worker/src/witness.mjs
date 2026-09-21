@@ -1,13 +1,13 @@
 // GBLIN witness — cosigns third-party transparency-log checkpoints.
 //
 // Why: a certifier that asks others to be checkable should submit to the same
-// discipline. Witnessing a log we already appear in (as a paid input of a
-// third-party agent) makes the dependency inspectable from both sides.
+// discipline. Witnessing a log this operator already appears in (as a paid input
+// of a third-party agent) makes the dependency inspectable from both sides.
 //
 // What it does, every scheduled tick, per configured log:
 //   1. GET <log>/checkpoint  (C2SP tlog-checkpoint: signed note)
 //   2. verify the LOG's own Ed25519 note signature against a PINNED key
-//   3. if we have a previous checkpoint: GET <log>/consistency?old=&new= and
+//   3. if a previous checkpoint is held: GET <log>/consistency?old=&new= and
 //      verify the RFC 6962 consistency proof (the tree only ever grows)
 //   4. cosign (c2sp.org/tlog-cosignature v1, Ed25519) and store the cosigned note
 // Anything that fails → nothing is signed, the failure is recorded, next tick retries.
@@ -31,9 +31,9 @@ export const WITNESSED_LOGS = [
     id: "markovian",
     origin: "markovianprotocol.com/log",
     base: "https://log.markovianprotocol.com",
-    // Pinned 2026-08-18 from two independent places: the log's root page and its
-    // /policy file. If the log ever rotates its key this witness stops signing —
-    // which is the correct behaviour — until a human re-pins on purpose.
+    // Pinned from two independent places: the log's root page and its /policy
+    // file. If the log ever rotates its key this witness stops signing — which
+    // is the correct behaviour — until a human re-pins on purpose.
     vkey: "markovianprotocol.com/log+0302c6c8+ATkpOWo95UuEiW2EhNZAol4f0CS8hMluJfPcTSzrr03v",
     note: "Log operated by Markovian Protocol (ERC-8004 agent #59895), whose Agent 2 buys GBLIN's risk attestation and records each purchase as a leaf.",
   },
@@ -126,7 +126,7 @@ export async function verifyConsistency(n, m, oldRoot, newRoot, proof) {
   return sn === 0 && eq(fr, oldRoot) && eq(sr, newRoot);
 }
 
-// ---------- our key ----------
+// ---------- this witness's key ----------
 export function parseWitnessSecret(secret) {
   const m = /^([0-9a-fA-F]{64}):([0-9a-fA-F]{64})$/.exec((secret || "").trim());
   if (!m) throw new Error("WITNESS_KEY must be <hex seed>:<hex pub>");
@@ -152,7 +152,7 @@ export async function cosign(note, keyPair, ts = Math.floor(Date.now() / 1000)) 
   return { line: `— ${WITNESS_NAME} ${b64(cat(h, tsb, sig))}`, ts };
 }
 
-// Verify one of OUR cosignature lines (used by tests and by /witness/verify).
+// Verify one of this witness's own cosignature lines (used by tests and by /witness/verify).
 export async function verifyCosignature(noteBody, line, pub) {
   const m = /^— (\S+) (\S+)$/.exec(line);
   if (!m || m[1] !== WITNESS_NAME) return false;
@@ -166,8 +166,9 @@ export async function verifyCosignature(noteBody, line, pub) {
 }
 
 
-// Storia delle cofirme (richiesta Markovian 19/08: "if you keep the earlier ones anywhere fetchable I will check those too").
-// Una lista per log in KV: [{size, root, ts, via, note}], cap 400 voci (le più vecchie escono), una scrittura per cofirma.
+// History of cosignatures, so that a log operator can fetch and re-check earlier ones and not
+// only the latest. One list per log in KV: [{size, root, ts, via, note}], capped at 400 entries
+// (oldest dropped), one write per cosignature.
 async function appendHistory(env, id, entry) {
   const k = `witness:${id}:history`;
   let h = [];
@@ -184,7 +185,7 @@ export async function witnessHistory(env, id) {
 // State in KV (binding COHERENCE, same namespace as the coherence automaton):
 //   witness:<id>:last   {size, root(b64), ts, cosignedNote, logSigOk:true}
 //   witness:<id>:err    {at, error}   (cleared on success)
-//   witness:<id>:count  contatore STORICO (non piu' scritto: ora vive dentro :last come .count)
+//   witness:<id>:count  legacy counter (no longer written: it now lives inside :last as .count)
 export async function witnessTick(env, fetchImpl = fetch) {
   if (!env.COHERENCE || !env.WITNESS_KEY) return { skipped: "not armed" };
   let keyPair;
@@ -219,8 +220,8 @@ export async function witnessTick(env, fetchImpl = fetch) {
 
       const { line, ts } = await cosign(note, keyPair);
       const cosignedNote = text.endsWith("\n") ? text + line + "\n" : text + "\n" + line + "\n";
-      // Il contatore sta DENTRO kLast: su Cloudflare free il budget e' 1000 scritture/giorno
-      // e una chiave separata per il conteggio ne bruciava 144 al giorno per niente.
+      // The counter lives INSIDE kLast: on the Cloudflare free plan the budget is 1000 writes
+      // per day, and a separate key just for the count burned 144 of them a day for nothing.
       const count = (Number.isInteger(prev?.count) ? prev.count : Number((await env.COHERENCE.get(kCount)) || 0)) + 1;
       await env.COHERENCE.put(kLast, JSON.stringify({ size: note.size, root: b64(note.root), ts, cosignedNote, count, firstSeen: prev?.firstSeen || ts }));
       await appendHistory(env, log.id, { size: note.size, root: b64(note.root), ts, via: "fetch", note: cosignedNote });
@@ -237,17 +238,17 @@ export async function witnessTick(env, fetchImpl = fetch) {
 }
 
 
-// ---------- push side: c2sp.org/tlog-witness (the LOG calls us) ----------
+// ---------- push side: c2sp.org/tlog-witness (the LOG calls this witness) ----------
 // POST /witness/add-checkpoint   body = "old <size>\n" + proof lines (b64, one per line) + "\n" + <signed checkpoint note>
-// 200 → our cosignature line(s); 400 malformed; 403 unknown log / not signed by the pinned key;
-// 409 `old` ≠ the size we hold (body = our size, decimal + "\n"); 422 consistency proof invalid / tree shrank / fork.
+// 200 → the cosignature line(s); 400 malformed; 403 unknown log / not signed by the pinned key;
+// 409 `old` ≠ the size held here (body = that size, decimal + "\n"); 422 consistency proof invalid / tree shrank / fork.
 // Same KV state as the passive tick, so pushed and fetched checkpoints can never disagree.
 // ── Witness Network (witness-network.org) ────────────────────────────────────
-// Scopriamo i log dalla lista pubblica "testing" e li configuriamo da soli.
-// REGOLA DELLA RETE: un log scoperto va AGGIUNTO alla nostra configurazione e
-// non va MAI rimosso o modificato perche' la lista cambia — cosi' i manutentori
-// della lista non possono disattivare configurazioni passate (e sono un bersaglio
-// meno interessante). La lista e' un canale di scoperta, non il nostro file di config.
+// Logs are discovered from the public "testing" list and configured automatically.
+// NETWORK RULE: a discovered log is ADDED to this configuration and is NEVER removed or
+// modified because the list changed — so the maintainers of the list cannot disable past
+// configurations (and are a less interesting target). The list is a discovery channel, not
+// the configuration file.
 export const WITNESS_LIST_URL = "https://testing.witness-network.org/log-list.1";
 const CFG_KEY = "witness:netcfg";           // { origin: {vkey, qpd, contact, addedAt} }
 
@@ -262,7 +263,7 @@ export function parseLogList(text) {
     else if (cur && (k === "origin" || k === "qpd" || k === "contact")) cur[k] = v;
   }
   if (cur) out.push(cur);
-  // l'origin, se non dichiarato, e' il nome della chiave nel vkey
+  // when it is not declared, the origin is the key name inside the vkey
   return out.map((l) => ({ ...l, origin: l.origin || l.vkey.split("+")[0] }));
 }
 
@@ -278,7 +279,7 @@ export async function witnessDiscoverLogs(env, fetchImpl = fetch) {
   } catch (e) { return { error: String(e.message || e) }; }
   const added = [];
   for (const l of logs) {
-    if (cfg[l.origin]) continue;            // gia' configurato: NON si tocca
+    if (cfg[l.origin]) continue;            // already configured: NEVER touched
     cfg[l.origin] = { vkey: l.vkey, qpd: l.qpd || null, contact: l.contact || null, addedAt: new Date().toISOString(), list: "testing/log-list.1" };
     added.push(l.origin);
   }
@@ -306,7 +307,7 @@ export async function witnessAddCheckpoint(env, bodyText) {
   try { note = parseNote(bodyText.slice(sep + 2)); } catch (e) { return { status: 400, body: `malformed checkpoint: ${e.message}\n` }; }
   let log = WITNESSED_LOGS.find((l) => l.origin === note.origin);
   if (!log) {
-    // log scoperto dalla lista della witness-network: la chiave viene da li'
+    // log discovered from the witness-network list: its key comes from there
     const cfg = await witnessConfiguredLogs(env);
     const net = cfg[note.origin];
     if (net) log = { id: "net:" + note.origin, origin: note.origin, vkey: net.vkey, note: `Discovered via ${net.list} on ${net.addedAt}` };
@@ -325,7 +326,7 @@ export async function witnessAddCheckpoint(env, bodyText) {
     if (note.size < prev.size) return { status: 422, body: "tree shrank\n" };
     if (note.size === prev.size) {
       if (b64(note.root) !== prev.root) return { status: 422, body: "same size, different root\n" };
-      // nothing new: re-cosign the head we already hold (fresh timestamp)
+      // nothing new: re-cosign the head already held (fresh timestamp)
     } else if (!(await verifyConsistency(prev.size, note.size, unb64(prev.root), note.root, proof))) {
       return { status: 422, body: "consistency proof invalid\n" };
     }
@@ -368,7 +369,7 @@ export async function witnessIndex(env) {
   const netCfg = await witnessConfiguredLogs(env);
   return {
     witness: WITNESS_NAME,
-    // Scheda "about" nel formato che la witness-network chiede agli operatori.
+    // "About" card in the form the witness network asks operators for.
     operator: "GBLIN Protocol",
     contact: "info@gblin.digital · https://gblin.digital",
     verifierKey,

@@ -55,8 +55,11 @@ That's it. No new infra, no oracle to run, no risk model to maintain.
 ## Reference integration
 
 - Verify (free): `verify_risk_attestation` in `@gblin-protocol/mcp-server`, or
-  recover the EIP-712 struct directly (domain `GBLIN Risk Attestation` v1,
-  chainId 8453, verifyingContract `0x36C81d7E1966310F305eA637e761Cf77F90852f0`).
+  recover the EIP-712 struct directly (domain `GBLIN Risk Attestation` version 2,
+  chainId 8453, verifyingContract `0xc2181d975c05c8c724b334bcED0764c0b86B1D53`;
+  attestations issued under version 1 carried `0x36C81d7E1966310F305eA637e761Cf77F90852f0`).
+  The response embeds its own domain under `eip712`, so a verifier that reads it
+  from there needs no hard-coded value.
 - Mint (agent side, $0.003 USDC): `GET https://gblin.digital/api/x402/attestation`
 - Machine index: `https://gblin.digital/api/x402/llms.txt`
 

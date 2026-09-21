@@ -10,11 +10,6 @@
  *
  * Design constraints (Workers free plan):
  *   - 100k requests/day, 10 ms CPU per invocation. All tools are either
- *
- * 14/08/2026: aggiunto l'OSSERVATORIO DEL CATALOGO (src/catalog.mjs) — sonde a
- * rotazione sulle top-200 risorse del discovery x402, vista free su /catalog,
- * feed completo via token per la webapp (che lo vende via x402). Il giro di
- * sonde SALTA il tick del sigillo giornaliero per stare nei 50 subrequest.
  *     cached upstream fetches (I/O, ~0 CPU) or tiny hex parsing.
  *   - Stateless: no sessions, no SSE stream, one JSON response per POST.
  *     Every JSON-RPC exchange is self-contained (spec-permitted mode).
@@ -22,23 +17,29 @@
  *     so there is no bundler and no supply chain.
  *   - Kill switch: env.MCP_DISABLED = "true" → 503 for everything.
  *   - Best-effort per-IP rate limit (per isolate): 60 req/min.
+ *
+ * The catalog observatory (./catalog.mjs) runs rotating liveness probes over the
+ * top-200 resources of the public x402 discovery catalog: a free aggregate view
+ * on /catalog and a token-gated full feed. The probe run is skipped on the tick
+ * that writes the daily seal, to stay inside the 50-subrequest budget.
  */
 
 import { catalogTick, catalogReport, catalogFull, observatoryPage, observatoryJson, observatoryBadge } from "./catalog.mjs";
 import { vmWatchDue, vmWatchTick, vmWatchTest } from "./vmwatch.mjs";
-// 18/08/2026: WITNESS (src/witness.mjs) — cofirma i checkpoint di log di
-// trasparenza terzi (C2SP tlog-cosignature v1). Primo log: markovianprotocol.com,
-// su loro invito. Zero costo: 1 lettura + 1 firma per tick; niente chain.
-// Secret WITNESS_KEY assente → disattivato in silenzio (fail-safe).
+// Witness (./witness.mjs): cosigns the checkpoints of third-party transparency
+// logs (C2SP tlog-cosignature v1). Cost is one read plus one signature per tick,
+// with no chain access at all. Without the WITNESS_KEY secret the feature stays
+// off silently (fail-safe).
 import { witnessTick, witnessIndex, witnessLatestNote, witnessAddCheckpoint, witnessHistory, witnessDiscoverLogs, witnessConfiguredLogs, WITNESSED_LOGS } from "./witness.mjs";
 import { x402StaticChallenge } from "./x402-challenge.mjs";
 import { incidentFor, incidentResponse } from "./incidents.mjs";
-import { contaChiamata, contaEsito, metodoNoto, scarica, scaricoDifferito, usoRecente } from "./mcpusage.mjs";
-import { registraRimborso, riepilogoRimborsi } from "./rimborsi.mjs";
+import { countCall, countOutcome, knownMethod, flushUsageNow, deferredFlush, recentUsage } from "./mcpusage.mjs";
+import { recordRefund, refundSummary } from "./refunds.mjs";
 import { sealAction, getReceipt, rlogStatus, demoAllowed, demoConsume, treeRoot, signedCheckpoint, proofFor, verifyReceipt, anchorConsistency, consistencyProof, leaves, pushToWitnesses, witnessState, PROVENANCE_LEVELS, RLOG_ORIGIN } from "./rlog.mjs";
 
-const GBLIN = "0x36C81d7E1966310F305eA637e761Cf77F90852f0";
-const BASKET_SELECTOR = "0x8c7e0875"; // basket(uint256)
+const GBLIN = "0xc2181d975c05c8c724b334bcED0764c0b86B1D53"; // the vault in service
+const GBLIN_LENS = "0xfCFea8027019E8551A1f09AD91532471F5D26f61"; // read-only views beside it
+const ASSET_SELECTOR = "0x62cb2052"; // GBLINLens.asset(address,uint256)
 // Multiple public RPCs: some (e.g. mainnet.base.org) reject requests coming
 // from Cloudflare's datacenter IPs, so the first reachable one wins.
 const FALLBACK_RPCS = [
@@ -49,9 +50,9 @@ const FALLBACK_RPCS = [
 ];
 const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
-// Bumped on EVERY deploy from 2026-09-10 (it sat at 0.7.1 through eight deploys). The
-// authoritative identifier of the surface remains manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.10.2" };
+// Bumped on EVERY deploy. The authoritative identifier of the surface remains
+// manifest_hash in /meta.
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.11.0" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -253,13 +254,14 @@ const TOOLS = [
         meta: { type: "string", maxLength: 512, description: "Extra JSON object as a string (optional). PUBLISHED." },
       },
       required: ["action", "input_hash"],
-      // Il server ignora i campi che non conosce. Vietarli qui faceva rifiutare la chiamata ai
-      // client che validano lo schema, per un campo che sarebbe stato innocuo (30/08/2026).
+      // The server ignores fields it does not know. Forbidding them here makes a
+      // schema-validating client reject the whole call over a field that would have
+      // been ignored anyway.
       additionalProperties: true,
     },
-    // destructiveHint ha default TRUE nella spec MCP quando readOnlyHint e' false: omettendolo,
-    // l'unico tool che produce valore si dichiarava distruttivo mentre e' puramente additivo
-    // (append-only). openWorldHint: scrive un log pubblico e restituisce un'ancora on-chain.
+    // destructiveHint defaults to TRUE in the MCP spec when readOnlyHint is false, so it is
+    // declared explicitly: this tool is purely additive (append-only), never destructive.
+    // openWorldHint: it writes to a public log and returns an on-chain anchor.
     annotations: { title: "Seal an AI action (demo receipt)", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     outputSchema: RECEIPT_SCHEMA,
   },
@@ -327,15 +329,14 @@ const TOOLS = [
   },
 ];
 
-// ── Coherence Proof v0 — the automaton observing ourselves ──────────────────
+// ── Coherence Proof v0 — self-observation ─────────────────────────────
 //
-// Pre-registered, hash-pinned promises (pattern borrowed from the one client
-// that holds US accountable: a published file whose hash is the commitment).
-// Every 10 minutes the scheduled handler probes the checks; every observation
-// is tallied per promise per day in KV. Reading the report is free, forever —
-// that is the design, not a promo. On-chain EAS attestation of the daily
-// window ships when the dedicated attester wallet exists (founder action);
-// nothing here needs to change for that, it only consumes these tallies.
+// Promises are pre-registered and hash-pinned: a published file whose hash is
+// the commitment. Every 10 minutes the scheduled handler probes the declared
+// checks; every observation is tallied per promise per day in KV. Reading the
+// report is free by design. The on-chain EAS attestation of each daily window
+// is armed as soon as the dedicated attester wallet is configured; nothing here
+// changes for that, it only consumes these tallies.
 const COHERENCE_SUBJECT = "gblin.digital (GBLIN Protocol, ERC-8004 #59286)";
 const COHERENCE_PROMISES = [
   {
@@ -365,8 +366,8 @@ const COHERENCE_PROMISES = [
     file: "https://gblin.digital/promises/P2-honest-counters.json",
     promiseId: "0xfd49bca1060869f41d97b877878e8886e028632d7d9c0be60110c174d31b3650",
     // kept when the public counters answer with numbers AND the disclosure file
-    // (which carries our own wallet list) is still served. Silently removing
-    // the disclosure is the violation this promise exists to catch.
+    // (which carries the operator's own wallet list) is still served. Silently
+    // removing the disclosure is the violation this promise exists to catch.
     check: async () => {
       const stats = await fetch("https://gblin.digital/api/agent-stats", {
         headers: { accept: "application/json" },
@@ -399,8 +400,8 @@ async function coherenceObserve(env) {
   const day = utcDay();
   for (const p of COHERENCE_PROMISES) {
     // A promise is IN FORCE only once its file is public: pre-registration is
-    // the commitment. Until then we do not observe — recording violations for
-    // an unpublished promise would be theatre, not measurement.
+    // the commitment. Before that nothing is observed, because tallying
+    // violations for an unpublished promise would not be a measurement.
     try {
       const f = await fetch(p.file, { headers: { accept: "application/json" } });
       if (f.status !== 200) continue;
@@ -536,9 +537,9 @@ async function coherenceAttestClosedDay(env) {
         d.obs,
         keptBps,
         d.obs - d.kept,
-        // Se il giorno ha violazioni e ne abbiamo scritto la nota, l'evidenza on-chain
-        // punta alla NOTA (che rimanda alla promessa), non solo al file della promessa:
-        // cosi' il conteggio e la spiegazione viaggiano insieme e per sempre.
+        // When a day has violations and an incident note exists for it, the on-chain
+        // evidence points at the NOTE (which links back to the promise) rather than at
+        // the promise file alone, so the tally and its explanation stay together.
         d.obs - d.kept > 0 && incidentFor(day)
           ? `https://gblin-mcp.gblin-mcp-worker.workers.dev/coherence/incident/${day}`
           : p.file,
@@ -584,10 +585,10 @@ async function coherenceAttestClosedDay(env) {
 }
 
 
-// ── Ancora giornaliera del root del receipts-log su Base (EAS) ──────────────
-// Riusa schema/wallet della Coerenza: promiseId = keccak256("gblin-receipts-log"),
-// observations = tree size, evidenceURI = "root:<b64>@<size>". Idempotente per
-// giorno e solo se il log è cresciuto. Fail-safe: senza ATTESTER_KEY non fa nulla.
+// ── Daily anchor of the receipts-log root on Base (EAS) ──────────────────
+// Reuses the Coherence schema and wallet: promiseId = keccak256("gblin-receipts-log"),
+// observations = tree size, evidenceURI = "root:<b64>@<size>". Idempotent per day and
+// only when the log has grown. Fail-safe: without ATTESTER_KEY it does nothing.
 async function rlogAnchorDaily(env) {
   if (!env.COHERENCE || !env.ATTESTER_KEY || !env.RLOG_KEY) return true;
   const today = utcDay();
@@ -675,8 +676,8 @@ async function coherenceAttestGenesis(env) {
   const start = sinceIso ? Math.floor(Date.parse(sinceIso) / 1000) : Math.floor(Date.now() / 1000);
   const end = Math.floor(Date.now() / 1000);
   const results = [];
-  // Manage the nonce ourselves: two writes from one wallet in the same request
-  // would otherwise collide on a stale nonce (the cause of the P2 failure).
+  // The nonce is managed explicitly: two writes from the same wallet in one
+  // request would otherwise collide on a stale nonce.
   let nonce = await pub.getTransactionCount({ address: account.address });
 
   for (const p of COHERENCE_PROMISES) {
@@ -795,9 +796,10 @@ async function cachedFetch(url, ttlSeconds, init) {
 
 // ── On-chain regime (same math as the attestation route / npm MCP tool) ─────
 
-async function ethCallBasket(rpc, index) {
+async function ethCallAsset(rpc, index) {
+  // asset(vault, i) on the Lens: (token, oracle, isStable, delisted, baseWeight, dynamicWeight, shielded, abandoned).
   const data =
-    BASKET_SELECTOR + index.toString(16).padStart(64, "0");
+    ASSET_SELECTOR + GBLIN.slice(2).toLowerCase().padStart(64, "0") + index.toString(16).padStart(64, "0");
   const res = await fetch(rpc, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -805,19 +807,22 @@ async function ethCallBasket(rpc, index) {
       jsonrpc: "2.0",
       id: 1,
       method: "eth_call",
-      params: [{ to: GBLIN, data }, "latest"],
+      params: [{ to: GBLIN_LENS, data }, "latest"],
     }),
   });
   const out = await res.json();
   if (out.error || !out.result || out.result === "0x") return null;
   const hex = out.result.slice(2);
   const word = (i) => hex.slice(i * 64, (i + 1) * 64);
-  if (hex.length < 6 * 64) return null;
+  if (hex.length < 8 * 64) return null;
   return {
     token: "0x" + word(0).slice(24),
-    isStable: BigInt("0x" + word(3)) === 1n,
+    isStable: BigInt("0x" + word(2)) === 1n,
+    delisted: BigInt("0x" + word(3)) === 1n,
     baseWeightBps: Number(BigInt("0x" + word(4))),
     dynamicWeightBps: Number(BigInt("0x" + word(5))),
+    shielded: BigInt("0x" + word(6)) === 1n,
+    abandoned: BigInt("0x" + word(7)) === 1n,
   };
 }
 
@@ -826,12 +831,12 @@ async function computeRegime(env) {
     ? [env.GBLIN_RPC_URL, ...FALLBACK_RPCS]
     : FALLBACK_RPCS;
 
-  // Pick the first RPC that answers basket(0), then reuse it for the rest.
+  // Pick the first RPC that answers asset(vault, 0) on the Lens, then reuse it for the rest.
   let rpc = null;
   let first = null;
   for (const candidate of rpcs) {
     try {
-      first = await ethCallBasket(candidate, 0);
+      first = await ethCallAsset(candidate, 0);
       if (first) {
         rpc = candidate;
         break;
@@ -843,18 +848,20 @@ async function computeRegime(env) {
   if (!rpc || !first) throw new Error("basket read failed on all RPCs");
 
   const entries = [first];
-  for (let i = 1; i < 8; i++) {
+  for (let i = 1; i < 16; i++) {
     let e = null;
     try {
-      e = await ethCallBasket(rpc, i);
+      e = await ethCallAsset(rpc, i);
     } catch {
       break;
     }
-    if (!e || (e.baseWeightBps === 0 && e.dynamicWeightBps === 0)) break;
+    if (!e) break; // the Lens reverts past the last row
     entries.push(e);
   }
 
-  const riskAssets = entries.filter((e) => !e.isStable);
+  // Rows that left the basket carry no weight and no shield.
+  const live = entries.filter((e) => !e.delisted && !e.abandoned);
+  const riskAssets = live.filter((e) => !e.isStable);
   const assets = riskAssets.map((e) => {
     const cut =
       e.baseWeightBps > 0
@@ -862,14 +869,14 @@ async function computeRegime(env) {
         : 0;
     return {
       token: e.token,
-      shielded: e.dynamicWeightBps < e.baseWeightBps,
+      shielded: e.shielded,
       base_weight_pct: e.baseWeightBps / 100,
       dynamic_weight_pct: e.dynamicWeightBps / 100,
       weight_cut_pct: Number(cut.toFixed(2)),
     };
   });
   const maxCut = assets.reduce((m, a) => Math.max(m, a.weight_cut_pct), 0);
-  const usdc = entries.find((e) => e.isStable);
+  const usdc = live.find((e) => e.isStable);
   const regimeCode = maxCut <= 0 ? 0 : maxCut < 40 ? 1 : 2;
   return {
     regime: ["calm", "elevated", "crash"][regimeCode],
@@ -877,9 +884,10 @@ async function computeRegime(env) {
     risk_posture: ["risk_on", "reduce", "risk_off"][regimeCode],
     severity_pct: Number(maxCut.toFixed(2)),
     defensive_cash_pct: usdc ? usdc.dynamicWeightBps / 100 : 0,
-    shield_active: entries.some((e) => e.dynamicWeightBps < e.baseWeightBps),
+    shield_active: live.some((e) => e.shielded),
     assets,
     contract: GBLIN,
+    lens: GBLIN_LENS,
     chain_id: 8453,
     source: "GBLIN on-chain Crash Shield (Base mainnet), read live",
     note: "Unsigned free reading. For a signed, attachable, verifiable-offline proof: resource gblin://howto/attestation.",
@@ -902,8 +910,9 @@ async function cachedRegime(env) {
 
 // ── Tool dispatch ───────────────────────────────────────────────────────────
 
-// Legacy flat tool names kept working (unlisted) for clients that learned them
-// before the 2026-08-21 rename to the dot-notation tree. Removed after 2026-11-21.
+// Legacy flat tool names stay accepted (unlisted) for clients that learned them
+// before the rename to the dot-notation tree. The sunset date is published in
+// GET /meta (legacy_tool_aliases).
 const LEGACY_TOOL_NAMES = {
   get_market_risk_regime: "risk.regime",
   get_attestation_sample: "risk.attestation_sample",
@@ -914,7 +923,7 @@ const LEGACY_TOOL_NAMES = {
   seal_action_demo: "receipts.seal",
   get_receipt: "receipts.get",
   verify_receipt: "receipts.verify",
-  // 3-level names, live for ~20 minutes on 2026-08-21 — kept so nobody who read them is stranded
+  // Three-level variants, published only briefly — kept so clients that read them are not stranded
   "risk.regime.get": "risk.regime",
   "risk.attestation.sample": "risk.attestation_sample",
   "protocol.info.get": "protocol.info",
@@ -927,11 +936,12 @@ const LEGACY_TOOL_NAMES = {
 
 // Tool names that exist ONLY in the stdio npm package (@gblin-protocol/mcp-server). A client
 // that learned them from the ERC-8004 registration, the README or the npm page and calls them
-// here gets "Unknown tool" — 199 such calls arrived on 2026-09-10 alone. Two consequences:
-// (a) the error now says WHERE the tool lives and what the closest thing here is;
-// (b) /mcp/usage counts them as tools/call:stdio-only:<name> — the names are OURS (closed
-//     list), so counting them reveals nothing about the caller, and separates a disoriented
-//     client from a fuzzer. Keep in sync with TOOL_DEFINITIONS in ../src/tools.ts.
+// here would otherwise get a bare "Unknown tool". Two consequences:
+// (a) the error says WHERE the tool lives and what the closest equivalent here is;
+// (b) /mcp/usage counts them as tools/call:stdio-only:<name>. The names come from this closed
+//     list, never from caller-supplied text, so counting them reveals nothing about the caller
+//     while still separating a misconfigured client from a fuzzer.
+// Keep in sync with TOOL_DEFINITIONS in ../src/tools.ts.
 const STDIO_ONLY_TOOLS = {
   get_treasury_state: "paid HTTP endpoint GET https://gblin.digital/api/x402/treasury-state (x402, $0.001); free summary via protocol.info",
   quote_safe_swap: "paid HTTP endpoint GET https://gblin.digital/api/x402/quote?direction=buy|sell&amount=<n> (x402, $0.001)",
@@ -940,7 +950,8 @@ const STDIO_ONLY_TOOLS = {
   analyze_treasury_health: "paid HTTP endpoint GET https://gblin.digital/api/x402/health (x402, $0.002)",
   get_governance_state: "paid HTTP endpoint GET https://gblin.digital/api/x402/governance (x402, $0.001); timelock and owner addresses are also in protocol.info (free)",
   share_skill_with_peer: "no equivalent here; protocol.info returns the same llms.txt the skill points to",
-  find_keeper_bounty: "no equivalent here; see https://gblin.digital/keepers",
+  get_auction_state: "paid HTTP endpoint GET https://gblin-sentinel.vercel.app/api/data/keeper-opps (x402, $0.002): the rebalancing auction, row by row; the same views are public on the GBLIN Lens 0xfCFea8027019E8551A1f09AD91532471F5D26f61",
+  find_keeper_bounty: "removed: the vault in service has no bounty; see get_auction_state in the stdio package",
   verify_risk_attestation: "no equivalent here: verification is pure EIP-712 math, see resource gblin://howto/attestation and gblin://keys for the attestor address",
 };
 
@@ -966,22 +977,22 @@ async function callTool(rawName, env, args = {}, req = {}) {
 
     case "receipts.seal": {
       if (args.mode && args.mode !== "demo") {
-        contaEsito("receipts.seal", "mode");
+        countOutcome("receipts.seal", "mode");
         throw Object.assign(new Error("only mode='demo' is available over MCP; paid seals: x402 HTTP endpoint (resource gblin://howto/seal)"), { code: -32602 });
       }
-      // Il "5/day/IP" era dichiarato in tre posti e non era applicato qui: era una promessa falsa.
-      // Ora vale davvero, e come sulla porta HTTP si consuma solo dopo un sigillo riuscito.
+      // The documented 5/day/IP demo quota is enforced here as well as on the HTTP route and,
+      // as there, it is consumed only after a seal has actually succeeded.
       const { ip, ctx } = req;
       if (!(await demoAllowed(env, ip || "unknown"))) {
-        contaEsito("receipts.seal", "quota");
+        countOutcome("receipts.seal", "quota");
         throw Object.assign(new Error("demo limit reached (5/day/IP). For unlimited seals pay $0.01 via x402: POST https://gblin.digital/api/x402/seal"), { code: -32602 });
       }
       const r = await sealAction(env, args, { demo: true });
       if (r.status !== 200) {
-        contaEsito("receipts.seal", r.status === 400 ? "schema" : "internal");
+        countOutcome("receipts.seal", r.status === 400 ? "schema" : "internal");
         throw new Error(r.error);
       }
-      contaEsito("receipts.seal", "ok");
+      countOutcome("receipts.seal", "ok");
       if (ctx) ctx.waitUntil(demoConsume(env, ip || "unknown")); else await demoConsume(env, ip || "unknown");
       return r.receipt;
     }
@@ -993,9 +1004,9 @@ async function callTool(rawName, env, args = {}, req = {}) {
       if (r.status !== 200) throw new Error(r.error);
       return r.receipt;
     }
-    case "how_to_seal_paid": // unlisted alias -> resource gblin://howto/seal (remove after 2026-09-21)
+    case "how_to_seal_paid": // deprecated unlisted alias -> resource gblin://howto/seal
       return howtoSeal();
-    case "how_to_buy_live_attestation": // unlisted alias -> resource gblin://howto/attestation (remove after 2026-09-21)
+    case "how_to_buy_live_attestation": // deprecated unlisted alias -> resource gblin://howto/attestation
       return howtoAttestation();
     default: {
       const here = TOOLS.map((t) => t.name).join(", ");
@@ -1051,8 +1062,8 @@ const SURFACE_META = {
   tool_count: 8,
   paid_over_mcp: false,
   sibling_package: {
-    name: "@gblin-protocol/mcp-server", version: "0.3.2", transport: "stdio (npm)", tool_count: 13,
-    note: "Different, larger tool set: the 10 treasury/governance tools (get_treasury_state, quote_safe_swap, swap_gblin_to_usdc_jit, invest_usdc_to_gblin, analyze_treasury_health, get_governance_state, share_skill_with_peer, find_keeper_bounty, verify_risk_attestation) plus get_market_risk_regime, and 3 receipts tools (seal_action_demo, get_receipt, how_to_seal_paid). Only the risk-regime read and the receipt read behave identically here (as risk.regime / receipts.get); this hosted server adds receipts.verify and the GET audit surface. The stdio package keeps flat snake_case names.",
+    name: "@gblin-protocol/mcp-server", version: "0.4.0", transport: "stdio (npm)", tool_count: 13,
+    note: "Different, larger tool set: the 10 treasury/governance tools (get_treasury_state, quote_safe_swap, swap_gblin_to_usdc_jit, invest_usdc_to_gblin, analyze_treasury_health, get_governance_state, share_skill_with_peer, get_auction_state, get_market_risk_regime, verify_risk_attestation) plus the 3 receipt tools. Transactions there go through the GBLIN Zap and need a signer the operator configures.",
   },
   resources: ["gblin://howto/attestation", "gblin://howto/seal", "gblin://limits", "gblin://keys"],
   prompts: ["risk_gate", "seal_and_verify"],
@@ -1178,10 +1189,10 @@ async function readResource(uri, env) {
         attestation: { url: `${SITE}/api/x402/attestation`, price_usdc: 0.003, network: "eip155:8453", protocol: "x402" },
         seal: { url: `${SITE}/api/x402/seal`, price_usdc: 0.01, network: "eip155:8453", protocol: "x402" },
       },
-      // Misurato il 22/08/2026 sul primo sigillo pagato con prova di pagamento: leggendo
-      // /v1/receipt/<indice> subito dopo il sigillo si puo' ricevere 404 per qualche secondo.
-      // Non e' un guasto ed e' innocuo — il sigillo RESTITUISCE gia' la ricevuta completa nella
-      // sua risposta — ma un client che sigilla e poi rilegge deve saperlo e ritentare.
+      // Reading /v1/receipt/<index> immediately after a seal can return 404 for a few
+      // seconds: the store behind the log is eventually consistent. This is expected and
+      // harmless — the seal response already carries the full receipt — but a client that
+      // seals and then re-reads has to know it and retry.
       read_after_seal: "The seal response already contains the full receipt. The read endpoints (/v1/receipt/:i, /v1/verify/:i, /log/*) are backed by an eventually consistent store and may lag a few seconds behind a just-written leaf: retry on 404 instead of treating it as a lost seal.",
       kill_switch: "env MCP_DISABLED => HTTP 503 on every request",
     };
@@ -1232,19 +1243,19 @@ async function handleMessage(msg, env, req = {}) {
   const { id, method, params } = msg;
   const isNotification = !("id" in msg);
 
-  // Contatore aggregato della superficie gratuita (vedi mcpusage.mjs): si registra COSA e'
-  // stato chiamato, mai CHI ha chiamato. Il nome dello strumento si prende dalla nostra
-  // lista, non dal testo del chiamante, cosi' nessuno puo' scriversi chiavi arbitrarie.
+  // Aggregate counters for the free surface (see mcpusage.mjs): they record WHAT was
+  // called, never WHO called it. The tool name is taken from the server's own list, never
+  // from caller-supplied text, so no caller can create arbitrary counter keys.
   try {
     if (method === "tools/call") {
-      const richiesto = params && params.name;
-      const risolto = LEGACY_TOOL_NAMES[richiesto] || richiesto;
-      contaChiamata("tools/call", TOOLS.some((t) => t.name === risolto) ? risolto
-        : (Object.prototype.hasOwnProperty.call(STDIO_ONLY_TOOLS, risolto) ? `stdio-only:${risolto}` : "unknown"));
+      const requested = params && params.name;
+      const resolved = LEGACY_TOOL_NAMES[requested] || requested;
+      countCall("tools/call", TOOLS.some((t) => t.name === resolved) ? resolved
+        : (Object.prototype.hasOwnProperty.call(STDIO_ONLY_TOOLS, resolved) ? `stdio-only:${resolved}` : "unknown"));
     } else if (method !== "notifications/initialized") {
-      contaChiamata(metodoNoto(method)); // elenco chiuso: un metodo inventato non crea una chiave
+      countCall(knownMethod(method)); // closed list: an invented method never creates a key
     }
-  } catch { /* un contatore non puo' rompere una risposta */ }
+  } catch { /* a counter must never break a response */ }
 
   try {
     switch (method) {
@@ -1339,16 +1350,15 @@ function json(body, status = 200, extra = {}) {
   });
 }
 
-// Cosa il resource server ha VISTO del pagamento x402 di questo sigillo, normalizzato e
-// limitato. Non e' il chiamante a dirlo: il webapp lo estrae dall'header x-payment che il
-// middleware ha appena verificato, e ce lo passa qui in base64.
+// What the resource server OBSERVED about the x402 payment behind this seal, normalized
+// and bounded. The caller does not get to state it: the resource server extracts it from
+// the x-payment header its middleware has just verified and forwards it here in base64.
 //
-// Perche' NON c'e' l'hash della transazione: al momento del sigillo il server non lo conosce
-// (il facilitator regola attorno all'handler). C'e' invece il nonce dell'autorizzazione
-// EIP-3009, che e' meglio di una nostra parola: USDC su Base emette
-// AuthorizationUsed(authorizer, nonce) nella transazione di regolamento, quindi chiunque
-// puo' RITROVARE quella transazione da solo partendo da payer + nonce. Verificato sul
-// regolamento del sigillo pagato del 21/08 (tx 0xf948f708..., due log: AuthorizationUsed e Transfer).
+// Why there is no transaction hash: at seal time the server does not know it, because the
+// facilitator settles around the handler. What is recorded instead is the EIP-3009
+// authorization nonce, which is stronger than an assertion by the operator: USDC on Base
+// emits AuthorizationUsed(authorizer, nonce) in the settlement transaction, so anyone can
+// independently find that transaction from payer + nonce.
 const HEXADDR = /^0x[0-9a-fA-F]{40}$/;
 const HEX32 = /^0x[0-9a-fA-F]{64}$/;
 function parsePaymentObservation(header) {
@@ -1369,23 +1379,23 @@ function parsePaymentObservation(header) {
     payload_sha256: /^[0-9a-f]{64}$/.test(o.payload_sha256 || "") ? o.payload_sha256 : undefined,
   };
   for (const k of Object.keys(out)) if (out[k] === undefined) delete out[k];
-  // Serve almeno un aggancio verificabile da fuori, altrimenti e' rumore e non si scrive.
+  // At least one externally verifiable handle is required; otherwise this is noise and is not written.
   if (!out.payer && !out.payload_sha256) return null;
   return out;
 }
 
-// Scarica il lotto dei contatori DOPO aver risposto, cosi' non allunga la risposta del
-// chiamante. Se il runtime non ci passa ctx, si scarica comunque ma senza attenderlo.
-function flushUso(env, ctx) {
+// Flush the counter batch AFTER the response has been produced, so it never adds latency
+// for the caller. If the runtime provides no ctx, the flush still happens, just unawaited.
+function flushUsage(env, ctx) {
   try {
-    // subito: scarica il lotto gia' accumulato (le chiamate precedenti di questo isolate)
-    const p = scarica(env);
+    // Immediately: flush the batch already accumulated by earlier calls on this isolate.
+    const p = flushUsageNow(env);
     if (p && ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(p);
-    // dopo qualche secondo: scarica anche QUESTA richiesta, che altrimenti resterebbe in
-    // sospeso fino alla prossima e morirebbe con l'isolate. Vive dentro waitUntil, quindi
-    // non allunga di un millisecondo la risposta al chiamante.
-    if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(scaricoDifferito(env));
-  } catch { /* mai far fallire una risposta per un contatore */ }
+    // A few seconds later: flush THIS request too, which would otherwise stay pending until
+    // the next one and die with the isolate. It runs inside waitUntil, so it adds nothing to
+    // the caller's response time.
+    if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(deferredFlush(env));
+  } catch { /* a counter must never break a response */ }
 }
 
 export default {
@@ -1396,45 +1406,45 @@ export default {
 
     const url = new URL(request.url);
 
-    // Le superfici gratuite della PROVA: se nessuno rilegge una ricevuta o un checkpoint,
-    // il prodotto non ha lettori, e finora non lo sapevamo. Percorsi normalizzati su un
-    // elenco fisso: un percorso inventato non crea una chiave nuova.
+    // Free read surfaces of the proof layer: whether anyone re-reads a receipt or a
+    // checkpoint is the only signal that the log has readers. Paths are normalized against
+    // a fixed list, so an invented path never creates a new counter key.
     try {
       const p = url.pathname;
-      const fisso = [
+      const fixedPaths = [
         "/coherence", "/log", "/log/checkpoint", "/log/leaves", "/log/consistency",
         "/log/witnesses", "/witness", "/regime", "/observatory", "/observatory.json", "/meta",
-        // La porta che diciamo alla gente di usare non era contata: non sapevamo se qualcuno
-        // avesse provato e fallito (relazione 30/08/2026, difetto 5.9). Conta il TENTATIVO;
-        // l'esito si legge dalle foglie.
+        // The entry point documented to callers is counted too, otherwise an attempt that
+        // failed would be invisible. This counts the ATTEMPT; the outcome is read from the
+        // log leaves.
         "/v1/seal-demo",
       ];
-      const normalizzato =
-        fisso.includes(p) ? p
+      const normalized =
+        fixedPaths.includes(p) ? p
         : p.startsWith("/v1/receipt/") ? "/v1/receipt"
         : p.startsWith("/v1/verify/") ? "/v1/verify"
         : p.startsWith("/log/proof/") ? "/log/proof"
         : p.startsWith("/receipt/") ? "/receipt (explorer)"
         : p.startsWith("/coherence/incident/") ? "/coherence/incident"
         : null;
-      if (normalizzato) contaChiamata("http", normalizzato);
-    } catch { /* mai far fallire una risposta per un contatore */ }
-    // Scarico qui, in cima: vale per OGNI rotta (non solo /mcp, dove stava prima e per cui
-    // i contatori HTTP non venivano mai scritti) e scarica il lotto PRECEDENTE, quindi le
-    // chiamate ravvicinate si fondono comunque in una scrittura sola.
-    flushUso(env, ctx);
+      if (normalized) countCall("http", normalized);
+    } catch { /* a counter must never break a response */ }
+    // Flushed here, at the top, so that it covers EVERY route and not just /mcp. It flushes
+    // the PREVIOUS batch, so closely spaced calls still collapse into a single write.
+    flushUsage(env, ctx);
 
-    // Sfida x402 anonima servita dal bordo (vedi x402-challenge.mjs). Ci arriva riscritta da
-    // una Project Routing Rule di Vercel quando la richiesta NON porta pagamento. Vercel,
-    // riscrivendo verso un URL esterno, inoltra il PERCORSO ORIGINALE, non quello scritto
-    // nella destinazione: rispondiamo sia sul nostro percorso sia su quello della webapp.
-    // (Scoperto il 22/08 con un 404 del Worker che sembrava di Vercel: corpo nostro, 46 byte.)
+    // Anonymous x402 challenge served at the edge (see x402-challenge.mjs). It arrives here
+    // rewritten by a Vercel Project Routing Rule when the request carries NO payment. When
+    // rewriting towards an external URL, Vercel forwards the ORIGINAL path rather than the
+    // one written in the destination, so both this Worker's path and the origin's path are
+    // answered.
     //
-    // STA QUI IN CIMA di proposito, PRIMA del ramo OPTIONS e PRIMA del rate-limit: la regola
-    // di Vercel non sa filtrare per metodo (le condizioni sono solo Header/Cookie/Query/Host),
-    // quindi ogni metodo passa di qui e deve rispondere quello che rispondeva l'origin —
-    // origin che serve la sfida anche a OPTIONS, PUT e DELETE. E un crawler oltre i 60/min
-    // deve vedere la sfida, non un 429 che l'origin non avrebbe mai dato.
+    // This block sits at the very top on purpose, BEFORE the OPTIONS branch and BEFORE the
+    // rate limit: a routing rule cannot filter by method (its conditions are only
+    // Header/Cookie/Query/Host), so every method reaches this point and must receive exactly
+    // what the origin would have returned — and the origin serves the challenge to OPTIONS,
+    // PUT and DELETE as well. A crawler above 60 req/min must likewise see the challenge and
+    // not a 429 the origin would never have produced.
     {
       const edge = x402StaticChallenge(request);
       if (edge) return edge;
@@ -1482,10 +1492,9 @@ export default {
         checkpoint_valid: !!byName.checkpoint, verifier_key_valid: !!byName.verifier_key,
         anchor_found: a.anchor_found, anchor_root_matches: a.anchor_root_matches, anchored_tree_size: a.anchored_tree_size, anchor_tx: a.anchor_tx,
         root_covers_this_receipt: a.anchor_found && idx < a.anchored_tree_size,
-        // Due assi DISTINTI, e vanno letti nello stesso posto della ricevuta.
-        // Prima del 23/08/2026 qui usciva il solo provenance_level: chi apriva
-        // questo endpoint leggeva "self-reported" su una ricevuta che altrove
-        // presentavamo come server-observed sul PAGAMENTO. Rilievo di un terzo.
+        // Two DISTINCT axes, reported in the same place as the receipt itself: the sealed
+        // action and the payment evidence. Exposing only provenance_level here would show
+        // "self-reported" for a receipt whose PAYMENT is server-observed.
         provenance_level: r.receipt.provenance.level, demo: !!r.receipt.payload.demo,
         payment_evidence_level: r.receipt.provenance.payment_evidence ? r.receipt.provenance.payment_evidence.level : "none",
         payment_evidence: r.receipt.provenance.payment_evidence || null,
@@ -1498,9 +1507,9 @@ export default {
       return json(await coherenceReport(env));
     }
 
-    // Regime GRATUITO via REST (stessa matematica del tool MCP, cache 60s):
-    // pensato per i provider dei plugin che girano a OGNI loop degli agenti.
-    // Free tier: mai conteggiato nei contatori "paid" (promessa P2).
+    // FREE regime over REST (same math as the MCP tool, 60s cache), meant for plugin
+    // providers that run on every agent loop. Free tier: never counted in the "paid"
+    // counters (promise P2).
     if (url.pathname === "/regime" && request.method === "GET") {
       const regime = await cachedRegime(env);
       return json({
@@ -1509,7 +1518,7 @@ export default {
       });
     }
 
-    // OSSERVATORIO PUBBLICO — artefatto citabile: pagina, JSON stabile, badge.
+    // Public observatory — citable artifact: HTML page, stable JSON, badge.
     if (url.pathname === "/observatory" && request.method === "GET") {
       return new Response(await observatoryPage(env), {
         headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=600", ...CORS },
@@ -1524,10 +1533,11 @@ export default {
       });
     }
 
-    // AI ACTION RECEIPTS — sigilli firmati+testimoniati per le azioni delle IA.
-    // Pagato: via webapp /api/x402/seal (x402 $0.01, inoltra qui col token).
-    // Demo: 5/giorno/IP, marcati demo:true. Lettura e verifica: gratis per sempre.
-    // Scoperta manuale dei log della witness-network (oltre al giro giornaliero).
+    // AI Action Receipts — signed and witnessed seals of AI actions.
+    // Paid: through the resource server at /api/x402/seal ($0.01 via x402), which forwards
+    // here with the internal token. Demo: 5/day/IP, marked demo:true. Reading and verifying
+    // are free.
+    // Manual discovery of witness-network logs, on top of the daily run.
     if (url.pathname === "/internal/witness-discover" && request.method === "POST") {
       const tok = url.searchParams.get("token") || "";
       if (!env.CATALOG_TOKEN || tok !== env.CATALOG_TOKEN) return json({ error: "unauthorized" }, 401);
@@ -1537,26 +1547,26 @@ export default {
       const tok = url.searchParams.get("token") || "";
       if (!env.CATALOG_TOKEN || tok !== env.CATALOG_TOKEN) return json({ error: "unauthorized" }, 401);
       let body; try { body = await request.json(); } catch { return json({ error: "invalid JSON" }, 400); }
-      const operator = url.searchParams.get("operator") === "1"; // solo per i sigilli delle NOSTRE azioni
-      // Osservazione del pagamento: arriva SOLO da questo header, mai dal corpo — cosi' il
-      // chiamante non puo' scriversi da solo un pagamento che non ha fatto. Il percorso e'
-      // gia' autenticato col CATALOG_TOKEN, quindi a metterlo e' il nostro resource server.
+      const operator = url.searchParams.get("operator") === "1"; // only for seals of the operator's own actions
+      // Payment observation: it comes ONLY from this header, never from the body, so a caller
+      // cannot write itself a payment it never made. The route is already authenticated with
+      // CATALOG_TOKEN, so the header can only have been set by the resource server.
       const payment = parsePaymentObservation(request.headers.get("x-gblin-payment-observed"));
       const r = await sealAction(env, body, { demo: false, operator, payment });
-      // Il percorso PAGATO non contava nulla: il 05/09 un pagamento senza consegna e' rimasto
-      // invisibile e non siamo riusciti a dire nemmeno COME fosse fallito. Ora si conta il
-      // motivo (mai chi), e se il sigillo fallisce dopo che qualcuno ha pagato, il debito
-      // finisce nel registro dei rimborsi.
-      contaEsito("seal-paid", r.status === 200 ? "ok" : (r.motivo || "schema"));
-      // Scrittura FORZATA e subito: un sigillo pagato e' un evento isolato, il lotto non si
-      // riempie mai e il buffer per-isolate viene sfrattato prima dell'orologio. La prima volta
-      // che e' successo (06/09) abbiamo perso l'esito della prima chiamata pagata vera.
-      ctx.waitUntil(scarica(env, true));
+      // The PAID path records its outcome: without it, a payment that produced no receipt
+      // would be invisible, with no way to say how it failed. The reason is counted (never
+      // who), and when a seal fails after someone has paid, the debt is written to the refund
+      // register.
+      countOutcome("seal-paid", r.status === 200 ? "ok" : (r.reason || "schema"));
+      // Forced, immediate write: a paid seal is an isolated event, the batch never fills up
+      // and the per-isolate buffer can be evicted before the timer fires, which would lose the
+      // outcome of a paid call.
+      ctx.waitUntil(flushUsageNow(env, true));
       if (r.status !== 200 && payment?.payer && payment?.nonce) {
-        ctx.waitUntil(registraRimborso(env, {
-          nonce: payment.nonce, payer: payment.payer, importo: payment.amount,
-          asset: payment.asset, rete: payment.network,
-          percorso: "/api/x402/seal", motivo: r.motivo || "schema",
+        ctx.waitUntil(recordRefund(env, {
+          nonce: payment.nonce, payer: payment.payer, amount: payment.amount,
+          asset: payment.asset, network: payment.network,
+          path: "/api/x402/seal", reason: r.reason || "schema",
         }));
       }
       return json(
@@ -1566,56 +1576,63 @@ export default {
               refund: "You paid and received no receipt. This is recorded; quote this nonce to gblin.digital." } : {}) },
         r.status, { "cache-control": "no-store" });
     }
-    // Esiti del percorso PAGATO riportati dal nostro resource server (la webapp). Serve per i
-    // fallimenti che non arrivano mai qui: corpo illeggibile, metodo sbagliato, noi irraggiungibili.
-    // Protetta col CATALOG_TOKEN: solo il nostro server puo' dichiarare un pagamento non consegnato.
-    if (url.pathname === "/internal/esito" && request.method === "POST") {
+    // Outcomes of the PAID path as reported by the resource server. Needed for the failures
+    // that never reach this Worker: unreadable body, wrong method, Worker unreachable.
+    // Guarded by CATALOG_TOKEN: only the resource server may declare a payment undelivered.
+    if ((url.pathname === "/internal/outcome" || url.pathname === "/internal/esito") && request.method === "POST") {
       const tok = url.searchParams.get("token") || "";
       if (!env.CATALOG_TOKEN || tok !== env.CATALOG_TOKEN) return json({ error: "unauthorized" }, 401);
       let b; try { b = await request.json(); } catch { return json({ error: "invalid JSON" }, 400); }
-      contaEsito(String(b.chiave || "seal-paid"), String(b.motivo || "internal"));
-      let registrato = false;
-      if (b.pagamento?.payer && b.pagamento?.nonce) {
-        registrato = await registraRimborso(env, {
-          nonce: b.pagamento.nonce, payer: b.pagamento.payer, importo: b.pagamento.amount,
-          asset: b.pagamento.asset, rete: b.pagamento.network,
-          percorso: String(b.percorso || ""), motivo: String(b.motivo || "internal"),
+      // Both field spellings are accepted on purpose. The resource server and this worker are
+      // deployed separately, so during a rollout one of the two is always the older build: a
+      // reader that understood only one spelling would silently drop the outcome of a paid
+      // failure, which is the one event that must never be lost.
+      const outcomeKey = b.key ?? b.chiave;
+      const outcomeReason = b.reason ?? b.motivo;
+      const outcomePath = b.path ?? b.percorso;
+      const payment = b.payment ?? b.pagamento;
+      countOutcome(String(outcomeKey || "seal-paid"), String(outcomeReason || "internal"));
+      let recorded = false;
+      if (payment?.payer && payment?.nonce) {
+        recorded = await recordRefund(env, {
+          nonce: payment.nonce, payer: payment.payer, amount: payment.amount,
+          asset: payment.asset, network: payment.network,
+          path: String(outcomePath || ""), reason: String(outcomeReason || "internal"),
         });
       }
-      ctx.waitUntil(scarica(env, true));   // vale lo stesso: e' un fallimento pagato, non si perde
-      return json({ ok: true, refund_recorded: registrato }, 200, { "cache-control": "no-store" });
+      ctx.waitUntil(flushUsageNow(env, true));   // same rule: a paid failure must not be lost
+      return json({ ok: true, refund_recorded: recorded }, 200, { "cache-control": "no-store" });
     }
 
-    // Quanto dobbiamo a chi ha pagato senza ricevere. Conteggi, mai indirizzi.
+    // What is owed to callers who paid and received nothing. Counts only, never addresses.
     if (url.pathname === "/refunds" && (request.method === "GET" || request.method === "HEAD")) {
-      return json(await riepilogoRimborsi(env), 200, { "cache-control": "public, max-age=300" });
+      return json(await refundSummary(env), 200, { "cache-control": "public, max-age=300" });
     }
 
-    // Rotte POST-only che PUBBLICHIAMO: se le si interroga col metodo sbagliato devono dire
-    // "metodo sbagliato", non "non esiste". Prima cadevano nel 404 catch-all in fondo, e un crawler
-    // che sonda in GET si sentiva rispondere che la rotta non c'e' (corretto il 23/08/2026).
-    // Le rotte /internal/* e /coherence/{genesis,seal} restano volutamente FUORI da questa lista:
-    // non sono in nessun documento pubblico e sono protette da token — una rotta privilegiata non
-    // deve confermare di esistere, quindi per loro il 404 e' la risposta giusta.
-    const SOLO_POST_PUBBLICHE = {
+    // Documented POST-only routes: queried with the wrong method they must answer "method not
+    // allowed", not "not found", otherwise a crawler probing with GET is told the route does not
+    // exist. The /internal/* and /coherence/{genesis,seal} routes are deliberately kept OUT of
+    // this list: they appear in no public document and are token-guarded, and a privileged route
+    // should not confirm that it exists, so 404 is the correct answer for them.
+    const PUBLIC_POST_ONLY = {
       "/v1/seal-demo": "use POST /v1/seal-demo (5/day/IP, receipts marked demo:true)",
       "/witness/add-checkpoint": "use POST /witness/add-checkpoint (c2sp tlog-witness: body = old <n> + consistency proof + signed note)",
     };
-    if (SOLO_POST_PUBBLICHE[url.pathname] && request.method !== "POST" && request.method !== "OPTIONS") {
-      return json({ error: "method not allowed — " + SOLO_POST_PUBBLICHE[url.pathname] },
+    if (PUBLIC_POST_ONLY[url.pathname] && request.method !== "POST" && request.method !== "OPTIONS") {
+      return json({ error: "method not allowed — " + PUBLIC_POST_ONLY[url.pathname] },
                   405, { "allow": "POST", "cache-control": "public, max-age=300" });
     }
     if (url.pathname === "/v1/seal-demo" && request.method === "POST") {
       if (!(await demoAllowed(env, ip))) {
-        contaEsito("seal-demo", "quota");
+        countOutcome("seal-demo", "quota");
         return json({ error: "demo limit reached (5/day/IP). For unlimited seals pay $0.01 via x402: POST https://gblin.digital/api/x402/seal" }, 429);
       }
       let body;
       try { body = await request.json(); }
-      catch { contaEsito("seal-demo", "json"); return json({ error: "invalid JSON" }, 400); }
+      catch { countOutcome("seal-demo", "json"); return json({ error: "invalid JSON" }, 400); }
       const r = await sealAction(env, body, { demo: true });
-      contaEsito("seal-demo", r.status === 200 ? "ok" : (r.status === 400 ? "schema" : "internal"));
-      // La quota si consuma solo se la ricevuta esiste davvero: un 400 non deve costare un tentativo.
+      countOutcome("seal-demo", r.status === 200 ? "ok" : (r.status === 400 ? "schema" : "internal"));
+      // The quota is consumed only when a receipt was actually produced: a 400 must not cost an attempt.
       if (r.status === 200) ctx.waitUntil(demoConsume(env, ip));
       return json(r.status === 200 ? r.receipt : { error: r.error }, r.status, { "cache-control": "no-store" });
     }
@@ -1647,9 +1664,7 @@ export default {
         witnesses: await witnessState(env),
       }, 200, { "cache-control": "public, max-age=60" });
     }
-    // Sfida x402 anonima servita dal bordo (vedi x402-challenge.mjs). Ci arriva riscritta
-    // da una Project Routing Rule di Vercel quando la richiesta NON porta pagamento.
-    // Note d'incidente della Coerenza: /coherence/incident/<AAAA-MM-GG>
+    // Coherence incident notes: /coherence/incident/<YYYY-MM-DD>
     if (url.pathname.startsWith("/coherence/incident/") && request.method === "GET") {
       return incidentResponse(url.pathname.split("/").pop());
     }
@@ -1672,8 +1687,8 @@ export default {
         design_note: "https://github.com/gblinproject/gblin-treasury-risk-regime/blob/main/docs/ai-action-transparency-log.md — what a receipt proves and what it does not, wire formats, and the honest scale of this log",
       }, 200, { "cache-control": "public, max-age=60" });
     }
-    // Ciò che serve a un WITNESS indipendente per firmare senza fidarsi di noi:
-    // prova di consistenza (append-only) e foglie in chiaro per ricalcolare l'albero.
+    // What an independent witness needs in order to sign without trusting this server:
+    // a consistency (append-only) proof and the raw leaves to recompute the tree itself.
     if (url.pathname === "/log/consistency" && request.method === "GET") {
       const m = Number(url.searchParams.get("old")), n0 = url.searchParams.get("new");
       const N = Number((await env.COHERENCE.get("rlog:size")) || 0);
@@ -1769,8 +1784,8 @@ export default {
       return new Response(html, { status: r.status === 200 ? 200 : 404, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=60", ...CORS } });
     }
 
-    // WITNESS — indice pubblico (chiave di verifica, ultimo checkpoint cofirmato per log)
-    // e la nota cofirmata in chiaro, nel formato che qualsiasi verificatore C2SP legge.
+    // Witness — public index (verifier key, latest cosigned checkpoint per log) and the
+    // cosigned note in plain text, in the format any C2SP verifier reads.
     if (url.pathname === "/witness/add-checkpoint" && request.method === "POST") {
       const bodyText = await request.text();
       if (bodyText.length > 65536) return new Response("too large\n", { status: 413 });
@@ -1801,11 +1816,11 @@ export default {
       return new Response(note, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=60", ...CORS } });
     }
 
-    // Osservatorio del catalogo x402 — vista FREE (aggregati + nostre risorse).
+    // x402 catalog observatory — FREE view (aggregates plus the operator's own resources).
     if (url.pathname === "/catalog" && request.method === "GET") {
       return json(await catalogReport(env));
     }
-    // Feed completo per la webapp (che lo firma e lo vende via x402).
+    // Full feed for the resource server, which signs it and sells it over x402.
     if (url.pathname === "/catalog/full" && request.method === "GET") {
       const full = await catalogFull(env, url.searchParams.get("token"));
       if (!full) return json({ error: "forbidden" }, 403);
@@ -1832,10 +1847,10 @@ export default {
       return json({ ok: true, complete, ...(await coherenceReport(env)) });
     }
 
-    // Uso aggregato della superficie gratuita. Gratis da leggere come tutto il resto.
+    // Aggregate usage of the free surface. Free to read, like everything else here.
     if (url.pathname === "/mcp/usage" && (request.method === "GET" || request.method === "HEAD")) {
-      const giorni = Math.min(60, Math.max(1, Number(url.searchParams.get("days")) || 14));
-      return json(await usoRecente(env, giorni), 200, { "cache-control": "public, max-age=120" });
+      const days = Math.min(60, Math.max(1, Number(url.searchParams.get("days")) || 14));
+      return json(await recentUsage(env, days), 200, { "cache-control": "public, max-age=120" });
     }
 
     if (url.pathname !== "/mcp") return json({ error: "not found — MCP endpoint is /mcp" }, 404);
@@ -1861,13 +1876,13 @@ export default {
         const r = await handleMessage(m, env, { ip, ctx });
         if (r) results.push(r);
       }
-      flushUso(env, ctx);
+      flushUsage(env, ctx);
       if (results.length === 0) return new Response(null, { status: 202, headers: CORS });
       return json(results);
     }
 
     const result = await handleMessage(body, env, { ip, ctx });
-    flushUso(env, ctx);
+    flushUsage(env, ctx);
     if (result === null) return new Response(null, { status: 202, headers: CORS });
     return json(result);
   },
@@ -1876,17 +1891,13 @@ export default {
   // promise once; on the first tick of a new UTC day it also seals the day
   // that just closed as an on-chain attestation (no-op until the key is set).
   async scheduled(_event, env, ctx) {
-    ctx.waitUntil(scarica(env, true)); // eventuale lotto residuo di questo isolate
+    ctx.waitUntil(flushUsageNow(env, true)); // any batch left over on this isolate
     const work = (async () => {
-      // Witness: 1-2 subrequest, mai in conflitto col budget del sigillo.
-      // Ogni 30 minuti, non ogni 10: la cofirma attesta che il log e' rimasto append-only
-      // fra le dimensioni VISTE, e vederlo 2 volte l'ora invece di 6 non toglie nulla a
-      // quella garanzia. Scritture risparmiate: ~190 al giorno su un tetto free di 1000.
-      // (27/08: Cloudflare ha avvisato al 90% del tetto; qui c'era il taglio piu' grosso
-      // che non tocca nessuna promessa hash-pinnata.)
-      // 28/08: ridotto ancora, da ogni 30 minuti a ogni ora. La cofirma attesta che il log
-      // e' rimasto append-only fra le dimensioni VISTE: vederlo una volta l'ora invece di due
-      // non toglie nulla a quella garanzia, e dimezza le scritture di questo ramo.
+      // Witness: 1-2 subrequests, never competing with the seal's budget.
+      // Hourly rather than on every 10-minute tick: a cosignature attests that the log stayed
+      // append-only between the sizes that witness has SEEN, so observing it once an hour
+      // instead of six times takes nothing away from that guarantee, and it keeps this branch
+      // well inside the free KV budget of 1000 writes/day.
       if (new Date().getUTCMinutes() < 10) {
         await witnessTick(env).catch((e) => console.error("witness:", e.message));
       }
@@ -1907,15 +1918,14 @@ export default {
           const anchored = await rlogAnchorDaily(env);
           if (done && anchored) await env.COHERENCE.put("attest:lastRun", today);
         } else {
-          // Giro di sonde del catalogo SOLO nei tick senza sigillo: il budget
-          // free è 50 subrequest/invocazione e il sigillo ne consuma parecchi.
-          // Una volta all'ora, non a ogni tick: il budget KV free e' 1000 scritture/giorno
-          // e il catalogo ne scriveva una ogni 10 minuti (144) per un dato che cambia di rado.
-          // 28/08: da ogni ora a ogni 3 ore. La liveness degli endpoint del catalogo cambia
-          // lentamente e la sonda gira comunque a rotazione: tre giri al giorno bastano.
+          // Catalog probe run ONLY on ticks that do not seal: the free budget is 50
+          // subrequests per invocation and sealing consumes a good share of it.
+          // Every 3 hours rather than on every tick: the free KV budget is 1000 writes/day,
+          // endpoint liveness changes slowly and the probe rotates through the catalog
+          // anyway, so three runs a day are enough.
           {
-            const ora = new Date();
-            if (ora.getUTCHours() % 3 === 0 && ora.getUTCMinutes() < 10) {
+            const now = new Date();
+            if (now.getUTCHours() % 3 === 0 && now.getUTCMinutes() < 10) {
               await catalogTick(env).catch((e) => console.error("catalog:", e.message));
             }
           }

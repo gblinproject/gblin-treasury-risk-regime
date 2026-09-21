@@ -1,28 +1,28 @@
-// Sfide x402 ANONIME servite dal bordo, per non far partire una funzione Vercel.
+// ANONYMOUS x402 challenges served from the edge, so that no Vercel function is invoked.
 //
-// Perche': misurato il 22/08/2026, il 91 per cento della CPU fatturata su Vercel era il
-// middleware x402 che risponde 402 a crawler e sonde (~6.000 richieste al giorno). Il
-// middleware gira PRIMA della cache, quindi nessuna cache lo riduce, e su Vercel il 402
-// non e' uno stato cacheabile. Una Project Routing Rule riscrive verso qui le richieste
-// CHE NON PORTANO un header di pagamento; chi paga non matcha la regola e prosegue sulla
-// pipeline vera, dove la verifica del pagamento resta l'unica autorita' che muove denaro.
+// Why: the x402 middleware answering 402 to crawlers and probes (~6,000 requests a day)
+// accounted for 91 per cent of the billed Vercel CPU. The middleware runs BEFORE the cache,
+// so no cache can reduce it, and on Vercel 402 is not a cacheable status. A Project Routing
+// Rule rewrites to this module every request that does NOT carry a payment header; a paying
+// request does not match the rule and continues on the real pipeline, where payment
+// verification remains the only authority that moves money.
 //
-// Due progetti, due famiglie di percorsi:
-//  - gblin.digital            /api/x402/<nome>  (9 percorsi)
-//  - gblin-sentinel.vercel.app /api/data/<nome> (4 percorsi)
-// e dentro la prima famiglia due comportamenti:
-// Dal 30/08/2026 tutti e nove si comportano allo stesso modo: senza pagamento rispondono la
-// sfida 402. Prima quote/jit/invest/health rispondevano 400 quando mancavano i parametri, e
-// quel 400 li teneva fuori dal catalogo Bazaar (il validatore CDP li rifiuta: "returned HTTP
-// 400 instead of 402"). Ora la guardia vive solo sul percorso PAGANTE, che non passa da qui.
-// Verificato il 22/08 e ancora valido: la sfida NON dipende dal valore dei parametri (due
-// quote con amount diverso danno byte identici), quindi si puo' servire statica.
+// Two projects, two families of paths:
+//  - gblin.digital             /api/x402/<name>  (9 paths)
+//  - gblin-sentinel.vercel.app /api/data/<name>  (4 paths)
+// All nine paths of the first family behave the same way: without payment they answer the
+// 402 challenge. Previously quote/jit/invest/health answered 400 when the parameters were
+// missing, and that 400 kept them out of the Bazaar catalogue (the CDP validator rejects
+// them: "returned HTTP 400 instead of 402"). The guard now lives only on the PAYING path,
+// which does not go through the edge.
+// The challenge does NOT depend on the value of the parameters (two quote requests with a
+// different amount produce identical bytes), so it can be served statically.
 //
-// VINCOLO: questi byte sono indicizzati dai cataloghi x402 e sono le fixture golden in
-// GBLIN_WEBAPP/test/x402-golden/ e GBLIN-Sentinel/test/x402-golden/.
-// FILE GENERATO — non modificarlo a mano: rigeneralo con
-//   cd worker && node tools/genera-sfide.mjs
-// altrimenti pubblichiamo termini diversi nei due posti. `node verify.mjs` se ne accorge.
+// CONSTRAINT: these bytes are the public contract indexed by the x402 catalogues, and they
+// mirror the golden fixtures of the two source projects.
+// GENERATED FILE — do not edit it by hand: regenerate it with
+//   cd worker && node tools/generate-challenges.mjs
+// otherwise edge and origin publish different terms. Running verify.mjs detects that.
 
 const PATHS = {
   "x402/attestation": {
@@ -79,10 +79,10 @@ const PATHS = {
   },
 };
 
-// Vercel, riscrivendo verso un URL esterno, inoltra il PERCORSO ORIGINALE della richiesta,
-// non quello scritto nella destinazione: accettiamo sia /api/x402/... sia /x402/... (e
-// altrettanto per /api/data/...), cosi' il Worker risponde anche quando lo si interroga
-// direttamente. (Scoperto il 22/08 con un 404 del Worker che sembrava di Vercel.)
+// When Vercel rewrites to an external URL it forwards the ORIGINAL request path, not the one
+// written in the destination: both /api/x402/... and /x402/... are accepted (and likewise for
+// /api/data/...), so this module also answers when it is queried directly. Getting this wrong
+// produces a 404 from here that looks like a Vercel 404.
 function nameFromPath(pathname) {
   const m = pathname.match(/^\/(?:api\/)?((?:x402|data)\/[a-z0-9-]+)\/?$/);
   return m && PATHS[m[1]] ? m[1] : null;
@@ -99,10 +99,10 @@ const json = (body, status, extra = {}) => new Response(body, {
   },
 });
 
-// Percorsi che accettano un solo verbo. Il corpo deve restare IDENTICO a quello della rotta
-// sull'origin (GBLIN_WEBAPP/src/app/api/x402/seal/route.ts, funzione soloPost): se cambia li',
-// va cambiato qui. Nato il 06/09/2026: con la chiave path-only il pagamento veniva regolato su
-// QUALUNQUE metodo e una GET pagata finiva su un 405 — pagato, e in mano niente.
+// Paths that accept a single verb. The body must stay IDENTICAL to the one returned by the
+// origin route for that path: if it changes there, it must change here. Reason it exists: with
+// a path-only key the payment was settled on ANY method, so a paid GET ended on a 405 — the
+// caller paid and got nothing.
 const SOLO_POST = new Set(["x402/seal"]);
 const SOLO_POST_BODY = JSON.stringify({
   error: "POST only",
@@ -112,19 +112,19 @@ const SOLO_POST_BODY = JSON.stringify({
 export function x402StaticChallenge(request) {
   const url = new URL(request.url);
   const name = nameFromPath(url.pathname);
-  if (!name) return null; // non e' un percorso che serviamo: decide il chiamante
+  if (!name) return null; // not a path served here: the caller decides what to do
   const p = PATHS[name];
 
-  // Rete di sicurezza: se qui arrivasse una richiesta CON pagamento, NON rispondiamo la
-  // sfida — sarebbe un pagante respinto. Meglio dirlo chiaramente che fingere.
+  // Safety net: a request arriving here WITH a payment must NOT be answered with the
+  // challenge — that would turn away a paying caller. Better to say so plainly than to pretend.
   if (request.headers.get("x-payment") || request.headers.get("payment-signature")) {
     return json(JSON.stringify({
       error: "this edge path serves the unpaid challenge only; a request carrying payment must reach the origin",
     }), 421, { "cache-control": "no-store" });
   }
 
-  // seal accetta SOLO POST. Fuori dal POST l'origin non chiede piu' il pagamento e risponde
-  // 405: il bordo deve dire la stessa cosa. OPTIONS resta fuori, lo serve il ramo CORS.
+  // seal accepts POST ONLY. Outside POST the origin no longer asks for payment and answers
+  // 405: the edge must say the same. OPTIONS is excluded, the CORS branch serves it.
   if (SOLO_POST.has(name) && request.method !== "POST") {
     if (request.method === "OPTIONS") return null;
     return json(SOLO_POST_BODY, 405, { "allow": "POST", "cache-control": "public, max-age=300" });
@@ -137,24 +137,24 @@ export function x402StaticChallenge(request) {
 
 export const EDGE_CHALLENGE_PATHS = Object.keys(PATHS);
 
-// L'origin ECHEGGIA il metodo della richiesta dentro la sfida, in due punti dei metadati
-// Bazaar. Misurato il 22/08: fra GET e POST cambiano solo quei due campi (attestation 2369
-// vs 2371 byte, governance 2187 vs 2189, treasury-state 1830 vs 1832) e le altre sfide non
-// nominano affatto il metodo. Le fixture golden sono catturate in GET: qui rimettiamo il
-// metodo vero, cosi' il bordo resta byte-identico all'origin anche fuori dal GET.
+// The origin ECHOES the request method inside the challenge, in two places of the Bazaar
+// metadata. Measured: between GET and POST only those two fields change (attestation 2369 vs
+// 2371 bytes, governance 2187 vs 2189, treasury-state 1830 vs 1832) and the other challenges
+// do not name the method at all. The golden fixtures are captured on GET: the real method is
+// put back here, so the edge stays byte-identical to the origin outside GET too.
 function withMethod(body, method) {
   if (method === "GET" || method === "HEAD") return body;
-  if (!/^[A-Z]{3,10}$/.test(method)) return body; // metodo strano: meglio la sfida in GET
+  if (!/^[A-Z]{3,10}$/.test(method)) return body; // unusual method: serve the GET challenge
   return body
     .split('"method":"GET"').join('"method":"' + method + '"')
     .split('"enum":["GET"]').join('"enum":["' + method + '"]');
 }
 
-// Lo stesso echo del metodo vale per l'header payment-required, che e' il corpo della sfida
-// in base64: va decodificato, sostituito e ricodificato. La sostituzione avviene sulla
-// stringa binaria di atob, non sul testo decodificato in UTF-8: i due pezzi che tocchiamo
-// sono ASCII puro, quindi restano intatti i byte multibyte (i trattini lunghi delle
-// descrizioni) che btoa non saprebbe ricodificare.
+// The same method echo applies to the payment-required header, which is the challenge body in
+// base64: it has to be decoded, substituted and re-encoded. The substitution runs on the binary
+// string returned by atob, not on the UTF-8 decoded text: the two fragments being replaced are
+// pure ASCII, so the multibyte bytes (the em dashes in the descriptions) that btoa could not
+// re-encode stay intact.
 function headerWithMethod(b64, method) {
   if (method === "GET" || method === "HEAD") return b64;
   if (!/^[A-Z]{3,10}$/.test(method)) return b64;

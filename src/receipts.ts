@@ -214,10 +214,16 @@ async function handleHowToSealPaid() {
 // EXPORTS
 // ───────────────────────────────────────────────────────────────────────────
 
+// MCP tool annotations: sealing appends to a public log (not read-only, not idempotent, never
+// destructive: nothing is overwritten); the other two only read.
+type ToolAnnotations = { readOnlyHint: boolean; idempotentHint: boolean; destructiveHint: boolean; openWorldHint: boolean };
+const READ_ONLY: ToolAnnotations = { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true };
+const APPEND_ONLY: ToolAnnotations = { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true };
+
 export const RECEIPT_TOOL_DEFINITIONS = [
-  SEAL_ACTION_DEMO_DEFINITION,
-  GET_RECEIPT_DEFINITION,
-  HOW_TO_SEAL_PAID_DEFINITION,
+  { ...SEAL_ACTION_DEMO_DEFINITION, annotations: APPEND_ONLY },
+  { ...GET_RECEIPT_DEFINITION, annotations: READ_ONLY },
+  { ...HOW_TO_SEAL_PAID_DEFINITION, annotations: READ_ONLY },
 ];
 
 export const RECEIPT_TOOL_HANDLERS: Record<string, (args: unknown) => Promise<unknown>> = {

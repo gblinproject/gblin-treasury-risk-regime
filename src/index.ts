@@ -27,8 +27,9 @@ const INSTRUCTIONS =
   "GBLIN stdio MCP (" + SERVER_NAME + " v" + SERVER_VERSION + "). Read-only tools need no key: " +
   "get_market_risk_regime (calm|elevated|crash from the on-chain Crash Shield on Base), " +
   "get_treasury_state, get_governance_state, analyze_treasury_health, quote_safe_swap, " +
-  "find_keeper_bounty, verify_risk_attestation (pure EIP-712 math), share_skill_with_peer. " +
-  "swap_gblin_to_usdc_jit and invest_usdc_to_gblin build transactions and need a signer " +
+  "get_auction_state (the vault rebalances by Dutch auction: side, gap and premium per row, with the bid to send), " +
+  "verify_risk_attestation (pure EIP-712 math), share_skill_with_peer. " +
+  "swap_gblin_to_usdc_jit and invest_usdc_to_gblin build transactions through the GBLIN Zap and need a signer " +
   "configured by the operator. Receipts: seal_action_demo (5/day/IP, marked demo:true), " +
   "get_receipt, how_to_seal_paid (unlimited seals are a paid x402 HTTP endpoint, $0.01 USDC). " +
   "Everything here is free; paid signals are x402 HTTP endpoints at https://gblin.digital/api/x402 " +

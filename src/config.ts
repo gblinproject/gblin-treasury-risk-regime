@@ -2,7 +2,7 @@
  * GBLIN MCP — Network Configuration
  *
  * All addresses, constants, and tunable parameters.
- * Verified against GBLIN_V6 contract on Base mainnet.
+ * Addresses and constants of the vault in service on Base mainnet, taken from the verified sources.
  */
 
 import type { Address } from "viem";
@@ -37,15 +37,23 @@ if (_rawRpc && !isValidHttpUrl(_rawRpc)) {
 export const RPC_URL =
   _rawRpc && isValidHttpUrl(_rawRpc) ? _rawRpc : DEFAULT_RPC_URL;
 
-// ─── Core Contracts (Base Mainnet, verified) ────────────────────────────────
-export const GBLIN_V6: Address = "0x36C81d7E1966310F305eA637e761Cf77F90852f0";
+// ─── Core contracts (Base mainnet, source verified) ─────────────────────────
+// The vault in service: shares are minted at NAV and redeemed pro rata in kind. It never swaps.
+export const GBLIN_VAULT: Address = "0xc2181d975c05c8c724b334bcED0764c0b86B1D53";
+// Read-only helper beside the vault: quotes, configuration, basket rows and auction state.
+export const GBLIN_LENS: Address = "0xfCFea8027019E8551A1f09AD91532471F5D26f61";
+// The only contract that swaps: it mints with any token and exits to ETH by redeeming in kind and
+// selling the legs on a venue. The vault's own side is always a mint at NAV or a redemption in kind.
+export const GBLIN_ZAP: Address = "0x0E9D6Ceb6D313b021622C121Cda9C62e86e60200";
+// Previous deployment, superseded. Kept only so that risk attestations signed under EIP-712 domain
+// version 1 remain verifiable; nothing is read from it.
+export const GBLIN_PREVIOUS: Address = "0x36C81d7E1966310F305eA637e761Cf77F90852f0";
 export const USDC: Address = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 export const WETH: Address = "0x4200000000000000000000000000000000000006";
 
-// GblinTimelockController — owns GBLIN_V6 since block 46160610 (May 2026).
-// 48h immutable delay, 14d grace period, open executor.
+// GblinTimelockController: 48-hour minimum delay, 14-day grace period, open executor.
 export const GBLIN_TIMELOCK: Address = "0x6aBeC8716fFeEcf7C3D6e68255b4797113E8e5Dd";
-// Guardian multisig — holds CANCELLER_ROLE (veto power), separate from PROPOSER_ROLE.
+// Holder of CANCELLER_ROLE on the timelock (veto), kept separate from PROPOSER_ROLE.
 export const GBLIN_GUARDIAN: Address = "0x30590c0D05c26562d7296CE3D927d3418d2e6dcA";
 export const EXPECTED_MIN_DELAY_SECONDS = 172_800n; // 48 hours
 
@@ -67,9 +75,9 @@ export const GBLIN_ATTESTOR: Address =
 // Uniswap V3 pool fee tier for the WETH->USDC leg of the JIT redemption
 export const WETH_USDC_POOL_FEE = 500; // 0.05%
 
-// ─── Protocol Constants (mirrors GBLIN_V6.sol) ──────────────────────────────
-export const MIN_DEPOSIT_WEI = 500_000_000_000_000n; // 0.0005 ETH
-export const COOLDOWN_SECONDS = 120; // 2 minutes (sell lock after buy)
+// ─── Protocol constants (mirror the vault's own settings) ──────────────────────────────
+// Redemption cooldown after a mint, in seconds. Read live from the Lens; this value is only the fallback when that read fails.
+export const COOLDOWN_SECONDS_FALLBACK = 20;
 export const ORACLE_STALENESS_SECONDS = 86_400; // 24h Chainlink heartbeat
 
 // ─── Slippage Buffers (basis points) ────────────────────────────────────────

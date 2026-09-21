@@ -10,14 +10,14 @@
 ## What this repo is
 
 `@gblin-protocol/mcp-server` is the official **Model Context Protocol** server
-for the GBLIN protocol on Base mainnet. It exposes 10 tools that let any AI
-agent read live treasury state and produce ready-to-broadcast calldata for
-swaps and rebalances.
+for the GBLIN protocol on Base mainnet. It exposes 13 tools that let any AI
+agent read live treasury state, verify governance and attestations, and
+produce ready-to-broadcast calldata to enter, leave and bid.
 
 GBLIN is **the treasury standard for AI agents on Base**: an on-chain
 45 % cbBTC + 45 % WETH + 10 % USDC basket with an automated Crash Shield, plus
-a deterministic two-step JIT redemption (`sellGBLINForEth` + WETH→USDC swap)
-that lets agents convert GBLIN to USDC the moment an x402 invoice arrives.
+a deterministic JIT redemption (the Zap's `sellGBLINForEth` + one WETH→USDC
+swap) that lets agents convert GBLIN to USDC the moment an x402 invoice arrives.
 
 ## Tech stack (working on this codebase)
 
@@ -33,7 +33,7 @@ that lets agents convert GBLIN to USDC the moment an x402 invoice arrives.
 1. **Never broadcast transactions.** Tools return calldata; the user's wallet
    signs and broadcasts. The server must remain key-less.
 2. **Never accept `minOut = 0`.** Every swap quote must produce a strictly
-   positive `minOut` derived from `quoteSellGBLIN` / `quoteBuyGBLINWithToken`
+   positive `minOut` derived from the Lens (`quoteSell` / `quoteBuy`)
    plus a dynamic slippage buffer (2.5 % normal / 4 % during Crash Shield).
 3. **Stale-feed guard.** Reject any Chainlink ETH/USD answer older than 24 h
    or non-positive. Tools must abort with a clear error rather than return
@@ -110,11 +110,13 @@ if x402_invoice_arrives  AND  usdc_balance < invoice_amount:
 | `swap_gblin_to_usdc_jit` | Pay an x402 invoice — atomic GBLIN→USDC swap |
 | `invest_usdc_to_gblin` | Convert agent earnings (USDC) back into GBLIN |
 | `analyze_treasury_health` | Full balance, gas runway, rebalance hint |
+| `get_governance_state` | Owner, pending owner, timelock roles and scheduled operations |
+| `get_auction_state` | The rebalancing auction: side, gap and premium per row, with the bid |
 
 ### Anti-patterns to avoid
 
-- Routing GBLIN swaps through generic DEX aggregators — use the contract's
-  native `sellGBLINForEth` + a single WETH→USDC hop (the V6 two-step JIT).
+- Routing GBLIN swaps through generic DEX aggregators — use the Zap's
+  `sellGBLINForEth` + a single WETH→USDC hop (the three-step JIT).
 - Holding the agent's private key in your server just to perform swaps —
   this MCP server is **stateless and key-less by design**.
 - Hard-coding the GBLIN contract address — read it from `get_treasury_state`

@@ -1,30 +1,29 @@
 // rlog.mjs — GBLIN AI ACTION RECEIPTS: append-only transparency log + sealing.
 //
-// Cosa fa: un agente (o un'app IA) manda gli HASH di ciò che ha fatto
-// (input/output/azione); il log li accoda a un albero Merkle RFC 6962,
-// firma un checkpoint C2SP e restituisce una RICEVUTA portabile e
-// verificabile OFFLINE: payload canonico + firma Ed25519 + indice nel log
-// + inclusion proof + checkpoint firmato. Il root viene ancorato su Base
-// (EAS) una volta al giorno dal wallet osservatore. Nessun contenuto viene
-// mai memorizzato: SOLO hash e stringhe corte (GDPR-light by design).
+// What it does: an agent (or an AI application) sends the HASHES of what it did
+// (input/output/action); the log appends them to an RFC 6962 Merkle tree, signs a
+// C2SP checkpoint and returns a portable receipt that can be verified OFFLINE:
+// canonical payload + Ed25519 signature + index in the log + inclusion proof +
+// signed checkpoint. The root is anchored on Base (EAS) once a day by the observer
+// wallet. No content is ever stored: ONLY hashes and short strings, by design.
 //
-// Regole pre-registrate (non cambiarle senza dichiararlo nel changelog):
+// Pre-registered rules (do not change them without declaring it in the changelog):
 //  - leaf = SHA256(0x00 || canonical_payload_utf8)   (RFC 6962)
 //  - node = SHA256(0x01 || left || right)
-//  - canonical JSON: chiavi ordinate, nessuno spazio, UTF-8
-//  - receipt signature: Ed25519 su "gblin-receipt/v1\n" + canonical_payload
-//  - checkpoint: signed note C2SP, origin "gblin.digital/receipts-log"
-//  - il log NON giudica e NON verifica i contenuti: attesta esistenza+tempo.
+//  - canonical JSON: sorted keys, no whitespace, UTF-8
+//  - receipt signature: Ed25519 over "gblin-receipt/v1\n" + canonical_payload
+//  - checkpoint: C2SP signed note, origin "gblin.digital/receipts-log"
+//  - the log does NOT judge and does NOT verify content: it attests existence and time.
 //    "evidence, not endorsement; a seal is not a compliance certificate."
 //
-// Secret: RLOG_KEY = "<hex seed 32B>:<hex pub 32B>" (come WITNESS_KEY).
+// Secret: RLOG_KEY = "<hex seed 32B>:<hex pub 32B>" (like WITNESS_KEY).
 // KV (binding COHERENCE): rlog:size · rlog:entry:<n> · rlog:node:<l>:<i>
 //                         rlog:demo:<ip>:<day> · rlog:anchored:<day>
 
 export const RLOG_ORIGIN = "gblin.digital/receipts-log";
 const MAX_STR = 128;           // max per action/agent_id/tool
-const MAX_META = 512;          // max chars del JSON meta
-const DEMO_PER_DAY = 5;        // sigilli demo gratis per IP/giorno
+const MAX_META = 512;          // max chars of the meta JSON
+const DEMO_PER_DAY = 5;        // free demo seals per IP per day
 
 const te = new TextEncoder();
 const b64 = (u8) => btoa(String.fromCharCode(...u8));
@@ -42,7 +41,7 @@ const sha256 = async (u8) => new Uint8Array(await crypto.subtle.digest("SHA-256"
 const leafHash = (data) => sha256(cat(Uint8Array.of(0x00), data));
 const nodeHash = (l, r) => sha256(cat(Uint8Array.of(0x01), l, r));
 
-// Canonical JSON: chiavi ordinate ricorsivamente, separatori minimi.
+// Canonical JSON: recursively sorted keys, minimal separators.
 export function canonicalize(v) {
   if (v === null || typeof v !== "object") return JSON.stringify(v);
   if (Array.isArray(v)) return "[" + v.map(canonicalize).join(",") + "]";
@@ -50,7 +49,7 @@ export function canonicalize(v) {
     .map((k) => JSON.stringify(k) + ":" + canonicalize(v[k])).join(",") + "}";
 }
 
-// ---------- chiave del log ----------
+// ---------- log key ----------
 function parseKey(secret) {
   const m = /^([0-9a-fA-F]{64}):([0-9a-fA-F]{64})$/.exec((secret || "").trim());
   if (!m) throw new Error("RLOG_KEY must be <hex seed>:<hex pub>");
@@ -68,11 +67,11 @@ export async function rlogVerifierKey(pub) {
   return `${RLOG_ORIGIN}+${hex(h)}+${b64(cat(Uint8Array.of(0x01), pub))}`;
 }
 
-// ---------- ancora on-chain + provenienza (additivi, fuori dal payload firmato) ----------
+// ---------- on-chain anchor + provenance (additive, outside the signed payload) ----------
 export const RLOG_EAS_SCHEMA_UID = "0x9f433a96467ab75530009970e5aa938ec94d8a49f08f66e7381822d557b448ef";
-export const RLOG_PROMISE_LABEL = "gblin-receipts-log"; // promiseId = keccak256 di questa stringa
-// Stato dell'ultima ancora EAS del root su Base (scritta da rlogAnchorDaily in index.js).
-// `covers_this_receipt` = la foglia era già nell'albero quando il root è stato ancorato.
+export const RLOG_PROMISE_LABEL = "gblin-receipts-log"; // promiseId = keccak256 of this string
+// State of the last EAS anchor of the root on Base (written by rlogAnchorDaily in index.js).
+// `covers_this_receipt` = the leaf was already in the tree when that root was anchored.
 export async function anchorInfo(env, index) {
   let last = null;
   try { last = JSON.parse((await env.COHERENCE.get("rlog:anchorLast")) || "null"); } catch { last = null; }
@@ -98,9 +97,9 @@ export function provenanceFor(payload) {
   const self = !!(payload && payload.by === "operator");
   const out = { ...PROVENANCE, level: self ? "server-observed" : "self-reported",
     meaning: self ? "This server performed the sealed action itself and sealed it (payload.by = \"operator\", set server-side only); the log proves the record and its time, and meta carries the on-chain tx of that action." : PROVENANCE.meaning };
-  // La prova del PAGAMENTO e' un asse diverso da quella dell'AZIONE, e non va confusa con essa:
-  // un sigillo pagato resta self-reported nei suoi hash. Nato dal rilievo di un terzo (22/08/2026):
-  // avevamo affermato in privato un pagamento che il record non portava. Ora o lo porta o non si dice.
+  // Evidence of PAYMENT is a different axis from evidence of the ACTION and must not be
+  // confused with it: a paid seal stays self-reported in its hashes. Either the record carries
+  // the payment or the payment is not claimed at all.
   if (payload && payload.payment) {
     out.payment_evidence = {
       level: "server-observed",
@@ -117,19 +116,19 @@ export const PROVENANCE = {
   meaning: "The sealer supplied action/input_hash/output_hash; the log proves they were recorded at this index and time. It does NOT prove the external action happened or that the hashes match any real input/output.",
 };
 
-// ---------- Merkle su KV (nodi congelati) ----------
+// ---------- Merkle tree in KV (frozen nodes) ----------
 const nk = (l, i) => `rlog:node:${l}:${i}`;
 async function getNode(env, l, i) {
   const v = await env.COHERENCE.get(nk(l, i));
   if (!v) throw new Error(`missing node ${l}:${i}`);
   return unhex(v);
 }
-// Root di un range [a,b) con b<=N, usando SOLO nodi congelati (ogni foglia
-// scritta congela node:0:i, e ogni coppia completa congela il genitore).
+// Root of a range [a,b) with b<=N, using ONLY frozen nodes (every written leaf
+// freezes node:0:i, and every completed pair freezes its parent).
 async function rangeRoot(env, a, b) {
   const len = b - a;
   if (len === 1) return getNode(env, 0, a);
-  // range perfetto allineato → nodo congelato diretto
+  // perfectly aligned range -> read the frozen node directly
   const isPow2 = (len & (len - 1)) === 0;
   if (isPow2 && a % len === 0) {
     const level = Math.log2(len);
@@ -140,10 +139,10 @@ async function rangeRoot(env, a, b) {
   return nodeHash(L, R);
 }
 export async function treeRoot(env, N) {
-  if (N === 0) return sha256(new Uint8Array(0)); // RFC 6962: root dell'albero vuoto
+  if (N === 0) return sha256(new Uint8Array(0)); // RFC 6962: root of the empty tree
   return rangeRoot(env, 0, N);
 }
-// Inclusion proof RFC 6962 per la foglia i in un albero di N foglie.
+// RFC 6962 inclusion proof for leaf i in a tree of N leaves.
 async function inclusionPath(env, i, a, b) {
   if (b - a === 1) return [];
   let k = 1; while (k * 2 < b - a) k *= 2;
@@ -162,9 +161,9 @@ export async function proofFor(env, index, N) {
   return path.map(b64);
 }
 
-// Consistency proof RFC 6962 (SUBPROOF): dimostra che l'albero di m foglie e'
-// un PREFISSO di quello di n foglie, cioe' che il log e' append-only e nessuna
-// voce e' stata riscritta. Senza questo un witness dovrebbe firmare alla cieca.
+// RFC 6962 consistency proof (SUBPROOF): shows that the tree of m leaves is a PREFIX
+// of the tree of n leaves, that is, that the log is append-only and no entry has been
+// rewritten. Without it a witness would have to sign blind.
 async function subproof(env, m, a, b, isRoot) {
   const n = b - a;
   if (m === n) return isRoot ? [] : [await rangeRoot(env, a, b)];
@@ -185,21 +184,21 @@ export async function consistencyProof(env, m, n) {
   return path.map(b64);
 }
 
-// Foglie in chiaro [start,end): permette a chiunque di ricalcolare l'albero da zero.
+// Raw leaves [start,end): anyone can recompute the tree from scratch.
 export async function leaves(env, start, end) {
   const N = Number((await env.COHERENCE.get("rlog:size")) || 0);
   end = Math.min(end, N);
   if (!(start >= 0 && start < end)) return { start, end, size: N, leaves: [] };
-  if (end - start > 256) end = start + 256; // stesso tetto del log di Markovian
+  if (end - start > 256) end = start + 256; // same cap other transparency logs use
   const out = [];
   for (let i = start; i < end; i++) {
     const c = await env.COHERENCE.get(`rlog:entry:${i}`);
     out.push(c === null ? null : c);
   }
-  // Onesta': quattro record (indici 11-14) NON sono JSON valido — contengono il token
-  // letterale `undefined` scritto dal bug del canonicalizzatore corretto il 21/08/2026.
-  // Le foglie restano quei byte esatti (un log append-only non si riscrive) e l'albero e'
-  // corretto, ma un consumatore che fa JSON.parse va in errore: va detto QUI, non solo nei doc.
+  // Honesty: four records (indices 11-14) are NOT valid JSON — they contain the literal token
+  // `undefined`, written by a canonicalizer bug that has since been fixed. The leaves stay those
+  // exact bytes (an append-only log is not rewritten) and the tree is correct, but a consumer
+  // calling JSON.parse will fail: that has to be said HERE, not only in the documentation.
   const malformed = [];
   for (let i = 0; i < out.length; i++) { try { JSON.parse(out[i]); } catch { malformed.push(start + i); } }
   const res = { start, end, size: N, encoding: "raw record bytes; leaf = SHA256(0x00 || record). Normally gblin-canonical-json/1, but see malformed_indices", leaves: out };
@@ -210,13 +209,13 @@ export async function leaves(env, start, end) {
   return res;
 }
 
-// ---------- checkpoint (signed note C2SP) ----------
-const SEP = "— ";   // em dash + spazio: separatore delle firme nelle signed note
+// ---------- checkpoint (C2SP signed note) ----------
+const SEP = "— ";   // em dash + space: the signature separator in signed notes
 
-// ---------- push dei nostri checkpoint ai witness (c2sp.org/tlog-witness) ----------
-// Il LOG spinge: manda "old <n>" + prova di consistenza + il checkpoint firmato e
-// riceve una riga di cofirma. La cofirma vale SOLO per quella (origin, size, root):
-// la conserviamo con la size e la serviamo nel checkpoint solo quando combacia.
+// ---------- push side: checkpoints are sent to witnesses (c2sp.org/tlog-witness) ----------
+// The LOG pushes: it sends "old <n>" + a consistency proof + the signed checkpoint and gets
+// back a cosignature line. A cosignature is valid ONLY for that (origin, size, root): it is
+// stored together with the size and served in the checkpoint only while it still matches.
 export const WITNESSES = [
   {
     id: "markovian",
@@ -233,7 +232,7 @@ export async function cosignaturesFor(env, N) {
     try {
       const v = JSON.parse((await env.COHERENCE.get(ckey(w.id))) || "null");
       if (v && v.size === N && v.line) out.push(v.line);
-    } catch { /* nessuna cofirma valida per questa size */ }
+    } catch { /* no valid cosignature for this size */ }
   }
   return out;
 }
@@ -248,8 +247,8 @@ export async function witnessState(env) {
   return out;
 }
 
-// Quale size tiene questo witness per il NOSTRO log? Il c2sp espone la nota cofirmata
-// sotto sha256(origin) in esadecimale minuscolo: la leggiamo e ne prendiamo la size.
+// Which size does a witness hold for THIS log? The c2sp convention exposes the cosigned note
+// under sha256(origin) in lowercase hex: read it and take the size from it.
 async function witnessHeldSize(w, fetchImpl = fetch) {
   try {
     const h = new Uint8Array(await crypto.subtle.digest("SHA-256", te.encode(RLOG_ORIGIN)));
@@ -273,7 +272,7 @@ export async function pushToWitnesses(env, { force = false, fetchImpl = fetch } 
     let prev = null;
     try { prev = JSON.parse((await env.COHERENCE.get(ckey(w.id))) || "null"); } catch {}
     if (prev && prev.size === N && prev.line) { results.push({ witness: w.name, ok: true, size: N, cached: true }); continue; }
-    // Backoff: se l'ultimo tentativo per QUESTA size e' fallito da meno di un'ora, non insistere.
+    // Backoff: if the last attempt for THIS size failed less than an hour ago, do not insist.
     if (!force && prev && prev.error && prev.triedSize === N && Date.now() - Date.parse(prev.triedAt || 0) < 3600e3) {
       results.push({ witness: w.name, ok: false, skipped: "backoff", last_error: prev.error }); continue;
     }
@@ -289,10 +288,10 @@ export async function pushToWitnesses(env, { force = false, fetchImpl = fetch } 
     };
     try {
       let r = await attempt(prev?.size || 0);
-      // 409 = il witness ne tiene una piu' grande e la dichiara nel corpo.
-      // 422 = la prova non regge per la size che gli abbiamo dichiarato: succede quando
-      // il witness ci ha gia' registrati fuori banda (trust-on-first-use) e noi non lo
-      // sappiamo. In quel caso chiediamo a LUI quale size tiene e rifacciamo la prova.
+      // 409 = the witness holds a larger size and declares it in the body.
+      // 422 = the proof does not hold for the size declared here: that happens when the witness
+      // already registered this log out of band (trust-on-first-use) without the log knowing.
+      // In that case the witness is asked which size it holds and the proof is rebuilt.
       if (r.status === 409 || r.status === 422) {
         let held = Number(r.text.trim().split(/\s+/).pop());
         if (!Number.isInteger(held) || held < 0 || held > N) held = await witnessHeldSize(w, fetchImpl);
@@ -327,13 +326,12 @@ export async function signedCheckpoint(env, N, root, { withCosignatures = true }
   return note;
 }
 
-// ---------- append + ricevuta ----------
+// ---------- append + receipt ----------
 const VERIFY_HINT = "offline: see verify-receipt.mjs in github.com/gblinproject/gblin-treasury-risk-regime (zero deps)";
-// Il NOME della regola, dentro la ricevuta. Fino al 02/09/2026 la ricevuta portava il digest
-// canonico ma non diceva COME era stato prodotto: chi riceveva una ricevuta da un terzo doveva
-// trovare questo repo per sapere quali byte ricalcolare. Segnalato da cloudpayX (issue #5) e
-// dichiarato da noi come difetto nostro nella risposta pubblica del 02/09. Sta FUORI dal payload
-// firmato, quindi non tocca leaf, firma ne' albero, e vale anche per le ricevute gia' scritte.
+// The NAME of the rule, inside the receipt. A receipt that carries the canonical digest without
+// saying HOW it was produced forces whoever receives it from a third party to find this
+// repository before knowing which bytes to recompute. It sits OUTSIDE the signed payload, so it
+// touches neither leaf, signature nor tree, and it applies to receipts written earlier too.
 const CANONICALIZATION = {
   rule: "gblin-canonical-json/1",
   frozen_since: "2026-08-21",
@@ -360,8 +358,8 @@ export function validateSealInput(body) {
   if (agent.length > MAX_STR) errs.push("agent_id: <=128 chars");
   if (tool.length > MAX_STR) errs.push("tool: <=128 chars");
   if (!hexRe.test(s(body.input_hash) || "")) errs.push("input_hash: 32-byte hex (sha256 of your input) required");
-  // Stringa vuota = campo assente. Gli agenti riempiono gli opzionali con "" e prima si beccavano
-  // un 400 su un campo che non volevano mandare (relazione 30/08/2026, difetto 5.4).
+  // An empty string means the field is absent. Agents fill optional fields with "" and used to
+  // get a 400 on a field they never meant to send.
   const outRaw = s(body.output_hash);
   if (outRaw && !hexRe.test(outRaw)) errs.push("output_hash: 32-byte hex if present");
   let meta = null;
@@ -376,12 +374,12 @@ export function validateSealInput(body) {
 }
 
 export async function sealAction(env, input, { demo = false, operator = false, payment = null } = {}) {
-  // `motivo` viene dalla lista chiusa dei contatori: serve a chi conta l'esito di una
-  // chiamata PAGATA senza dover indovinare la causa dal testo dell'errore.
-  if (!env.COHERENCE) return { status: 503, error: "log storage unavailable", motivo: "config" };
-  if (!env.RLOG_KEY) return { status: 503, error: "log key not armed", motivo: "config" };
+  // `reason` comes from the closed list used by the counters: it lets the outcome of a PAID
+  // call be recorded without guessing the cause from the error text.
+  if (!env.COHERENCE) return { status: 503, error: "log storage unavailable", reason: "config" };
+  if (!env.RLOG_KEY) return { status: 503, error: "log key not armed", reason: "config" };
   const v = validateSealInput(input);
-  if (v.errs.length) return { status: 400, error: v.errs.join("; "), motivo: "schema" };
+  if (v.errs.length) return { status: 400, error: v.errs.join("; "), reason: "schema" };
 
   const N = Number((await env.COHERENCE.get("rlog:size")) || 0);
   const payload = {
@@ -389,13 +387,13 @@ export async function sealAction(env, input, { demo = false, operator = false, p
     action: v.action, agent_id: v.agent || null, tool: v.tool || null,
     input_hash: v.input_hash, output_hash: v.output_hash, meta: v.meta,
   };
-  if (operator) payload.by = "operator"; // solo il percorso interno puo' impostarlo
-  if (payment) payload.payment = payment;  // idem: cio' che il resource server HA VISTO del pagamento
+  if (operator) payload.by = "operator"; // only the internal path can set it
+  if (payment) payload.payment = payment;  // likewise: what the resource server SAW of the payment
   if (demo) payload.demo = true;
   const canonical = canonicalize(payload);
   const leaf = await leafHash(te.encode(canonical));
 
-  // append: entry + leaf(node 0) + congelamento dei genitori completati
+  // append: entry + leaf (node 0) + freeze the parents that are now complete
   await env.COHERENCE.put(`rlog:entry:${N}`, canonical);
   await env.COHERENCE.put(nk(0, N), hex(leaf));
   let l = 0, i = N, cur = leaf;
@@ -447,7 +445,7 @@ export async function getReceipt(env, index) {
   const root = await treeRoot(env, N);
   const [checkpoint, proof] = await Promise.all([signedCheckpoint(env, N, root), proofFor(env, index, N)]);
   const kp = parseKey(env.RLOG_KEY);
-  // Ed25519 è deterministica: ri-firmare il canonical dà la stessa firma del seal originale
+  // Ed25519 is deterministic: re-signing the canonical bytes yields the original seal's signature
   const sig = new Uint8Array(await crypto.subtle.sign(
     { name: "Ed25519" }, await signer(kp), te.encode("gblin-receipt/v1\n" + canonical)));
   return {
@@ -460,11 +458,11 @@ export async function getReceipt(env, index) {
       inclusion_proof: proof, checkpoint,
       anchor: await anchorInfo(env, index),
       provenance: provenanceFor(parsed || {}),
-      // Questi tre campi c'erano solo nella ricevuta emessa al sigillo, non in quella riletta:
-      // chi riceveva una ricevuta da un terzo non aveva il puntatore al verificatore offline
-      // ne' l'avvertenza su cosa e' pubblico. La "portabilita'" saltava proprio sul percorso di
-      // rilettura (relazione 30/08/2026, difetto 5.2). Non toccano leaf ne' firma: non sono
-      // nel payload canonico.
+      // These three fields existed only in the receipt returned at seal time, not in the one
+      // read back: whoever received a receipt from a third party had neither the pointer to the
+      // offline verifier nor the warning about what is public, so portability broke exactly on
+      // the read-back path. They touch neither leaf nor signature: they are not part of the
+      // canonical payload.
       canonical_sha256: hex(await sha256(te.encode(canonical))),
       canonicalization: CANONICALIZATION,
       verify: VERIFY_HINT,
@@ -490,11 +488,10 @@ export async function rlogStatus(env) {
   return { origin: RLOG_ORIGIN, size: N, root, verifier_key: vkey, checkpoint };
 }
 
-// rate-limit demo per IP (KV, TTL 24h)
-// La quota demo si CONTROLLA prima e si CONSUMA solo dopo un sigillo riuscito.
-// Prima erano la stessa funzione: cinque body sbagliati chiudevano l'IP per la giornata
-// senza produrre una sola ricevuta (relazione 30/08/2026, difetto 5.3). Effetto collaterale
-// gradito: una put in meno per ogni tentativo fallito, e il budget KV e' stretto.
+// per-IP demo rate limit (KV, 24h TTL)
+// The demo quota is CHECKED first and CONSUMED only after a successful seal. When both were the
+// same operation, five malformed bodies locked an IP out for the day without producing a single
+// receipt. Welcome side effect: one write fewer per failed attempt, and the KV budget is tight.
 const demoKey = (ip) => `rlog:demo:${ip}:${new Date().toISOString().slice(0, 10)}`;
 
 export async function demoAllowed(env, ip) {
@@ -508,8 +505,8 @@ export async function demoConsume(env, ip) {
   await env.COHERENCE.put(k, String(n + 1), { expirationTtl: 90000 });
 }
 
-// ---------- verifica di una ricevuta (pure math: NON legge il KV, non si fida del server) ----------
-// Ritorna {valid, checks:[{name, ok, detail}], errors:[]}. Stessi 5 controlli di verify-receipt.mjs.
+// ---------- receipt verification (pure math: does NOT read KV, does not trust the server) ----------
+// Returns {valid, checks:[{name, ok, detail}], errors:[]}. The same 5 checks as verify-receipt.mjs.
 export async function verifyReceipt(input) {
   const r = (input && input.receipt) || input;
   const checks = []; const errors = [];
@@ -569,7 +566,7 @@ export async function verifyReceipt(input) {
   return done();
 }
 
-// Anchor consistency (needs KV): does the root we anchored on-chain equal the root this log
+// Anchor consistency (needs KV): does the root anchored on-chain equal the root this log
 // recomputes for that tree size today? A mismatch would mean the log was rewritten.
 export async function anchorConsistency(env) {
   let last = null;

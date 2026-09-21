@@ -12,9 +12,9 @@ version numbers, no unverifiable "first/only" claims).
 | Token name | Global Balanced Liquidity Index |
 | Ticker / symbol | GBLIN |
 | Chain / platform | Base (chain ID 8453) |
-| Contract address | `0x36C81d7E1966310F305eA637e761Cf77F90852f0` |
+| Contract address | `0xc2181d975c05c8c724b334bcED0764c0b86B1D53` |
 | Decimals | 18 |
-| Token standard | ERC-20 (with EIP-2612 Permit) |
+| Token standard | ERC-20 (with EIP-3009 payments by signature) |
 | Launch type | Fair launch, no token sale |
 | Logo (PNG, direct URL) | `https://raw.githubusercontent.com/gblinproject/GBLIN/main/LOGO_GBLIN.png` |
 | Website | `https://gblin.digital` |
@@ -33,32 +33,31 @@ CMC require. Test them in a browser before submitting.
 
 ## Markets / liquidity pools
 
-| Venue | Pair | Pool address |
+| Venue | Pair | Address |
 |---|---|---|
-| Aerodrome (Base) | GBLIN/WETH | `0x6Ac18D5e90278D2477027B5769EFb2fF0711FFbB` |
-| Uniswap (Base) | GBLIN/WETH | `0xAb305c45F4E42A73909a49a6775e3f7782239dAE` |
-| Protocol contract | direct buy/sell at NAV | `0x36C81d7E1966310F305eA637e761Cf77F90852f0` |
+| Protocol contract | mint and redeem at NAV | `0xc2181d975c05c8c724b334bcED0764c0b86B1D53` |
 
-GeckoTerminal / DEX aggregator links for the form (auto-derived from the pools):
-- `https://www.geckoterminal.com/base/pools/0x6Ac18D5e90278D2477027B5769EFb2fF0711FFbB`
-- `https://www.geckoterminal.com/base/pools/0xAb305c45F4E42A73909a49a6775e3f7782239dAE`
+There is no DEX pool for the vault in service at the moment: the way in and out is
+minting and redeeming at NAV (any token through the Zap `0x0E9D6Ceb6D313b021622C121Cda9C62e86e60200`).
+Add the pool row when one exists.
 
 ## Project description (paste as-is)
 
 > GBLIN is a NAV-backed basket token on Base: each token is redeemable pro-rata
 > against an on-chain treasury of cbBTC, WETH and USDC, with buys and sells
-> executed directly against the contract at NAV. An automated on-chain
-> crash-response mechanism ("Crash Shield") reduces volatile-asset exposure
-> during severe oracle-measured drawdowns and restores it in recovery. Fees are
-> 0.05% (founder) + 0.05% (stability, accruing to NAV); parameters are governed
-> by a 48-hour public timelock, and the contract has been analyzed with Slither
-> (0 critical / 0 high findings; no external manual audit).
+> executed directly against the contract at NAV; rebalancing is a Dutch auction
+> open to anyone. An automated on-chain crash-response mechanism ("Crash Shield")
+> reduces volatile-asset exposure during severe oracle-measured drawdowns and
+> restores it in recovery. Fees: 0.10% on every mint (0.05% stays in the vault,
+> 0.05% to the fee recipient as shares), a 0.50% yearly management fee accrued as
+> shares, none on redemption in kind. Parameters are governed by a 48-hour public
+> timelock. No paid third-party audit has been commissioned.
 
 ## Explorer links
 
-- BaseScan token page: `https://basescan.org/token/0x36C81d7E1966310F305eA637e761Cf77F90852f0`
-- BaseScan contract (verified source): `https://basescan.org/address/0x36C81d7E1966310F305eA637e761Cf77F90852f0#code`
-- Blockscout (Base): `https://base.blockscout.com/token/0x36C81d7E1966310F305eA637e761Cf77F90852f0`
+- BaseScan token page: `https://basescan.org/token/0xc2181d975c05c8c724b334bcED0764c0b86B1D53`
+- BaseScan contract (verified source): `https://basescan.org/address/0xc2181d975c05c8c724b334bcED0764c0b86B1D53#code`
+- Blockscout (Base): `https://base.blockscout.com/token/0xc2181d975c05c8c724b334bcED0764c0b86B1D53`
 
 ## Socials / links
 

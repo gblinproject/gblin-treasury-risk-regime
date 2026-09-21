@@ -99,4 +99,4 @@ The attestation proves *what the on-chain risk regime was at issuance*, verifiab
 - Mint: `https://gblin.digital/api/x402/attestation`
 - Verify (free): `verify_risk_attestation` in `@gblin-protocol/mcp-server`
 - Machine index: `https://gblin.digital/api/x402/llms.txt`
-- Contract: `0x36C81d7E1966310F305eA637e761Cf77F90852f0` (Base mainnet, chain id 8453)
+- Vault: `0xc2181d975c05c8c724b334bcED0764c0b86B1D53` (Base mainnet, chain id 8453). EIP-712 domain `GBLIN Risk Attestation` version 2 (verifying contract = the vault); version 1 attestations remain verifiable.

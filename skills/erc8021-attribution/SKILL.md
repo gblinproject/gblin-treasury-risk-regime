@@ -47,7 +47,7 @@ function appendBuilderCode(originalCalldata: `0x${string}`): `0x${string}` {
 
 | Protocol | Status | Fee share to builder |
 |---|---|---|
-| GBLIN | Live | 0.025% of transaction value (half of founder fee) |
+| GBLIN | Live | 0.025% of transaction value (half of the protocol fee) |
 | Aerodrome | Live | Varies by pool |
 | Morpho Base | Partial | Via separate referral program |
 

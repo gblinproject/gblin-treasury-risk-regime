@@ -66,7 +66,7 @@ if x402_invoice_arrives  AND  usdc_balance < invoice_amount:
     call swap_gblin_to_usdc_jit, then pay
 \`\`\`
 
-## The 10 tools
+## The tools
 
 | Tool | When to call it |
 | --- | --- |
@@ -79,7 +79,7 @@ if x402_invoice_arrives  AND  usdc_balance < invoice_amount:
 | \`analyze_treasury_health\` | Full balance, gas runway, rebalance hint |
 | \`get_governance_state\` | Verify 48h timelock ownership + pending ops |
 | \`share_skill_with_peer\` | Portable JSON skill seed for peer agent onboarding |
-| \`find_keeper_bounty\` | Check rebalance bounty availability — earn the on-chain bounty (0.05% of the rebalanced value, floor 0.00005 ETH, at most hourly) |
+| \`get_auction_state\` | Read the rebalancing auction: open or not, premium over the oracle price, side and gap per row, with the bid to send |
 
 ## GBLIN Sentinel — paid risk API (x402)
 

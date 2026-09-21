@@ -1,14 +1,15 @@
-// Note d'incidente dell'automa della Coerenza.
+// Incident notes for the coherence observer.
 //
-// Perche' esistono: quando una promessa registra una violazione, il numero NON si tocca —
-// l'automa serve a misurare anche contro di noi, e la promessa P2 e' proprio "contatori
-// onesti". Ma il numero da solo non dice cosa e' successo. Queste note vivono ACCANTO al
-// numero: l'attestazione EAS del giorno le mette nel campo `evidenceURI`, quindi la
-// spiegazione finisce on-chain insieme al conteggio, per sempre.
+// When a promise records a violation the count is never edited: the observer measures the
+// operator too, and one of the promises is precisely that the counters are honest. A count on
+// its own does not say what happened, so these notes live BESIDE it -- the day's attestation
+// carries them in `evidenceURI`, and the explanation is anchored on chain together with the
+// number.
 //
-// Regole, per non trasformarle in scuse: descrivono i fatti e la causa, non riclassificano
-// nulla, e non pretendono di annullare la violazione. Vengono scritte dopo, mai prima
-// (una manutenzione ANNUNCIATA richiederebbe una promessa nuova, pre-registrata).
+// Rules, so they stay notes and not excuses: they state the facts and the cause, they
+// reclassify nothing, and they do not claim to cancel the violation. They are written
+// afterwards, never in advance; an announced maintenance window would require a new,
+// pre-registered promise.
 
 export const INCIDENTS = {
   "2026-08-22": {

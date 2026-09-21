@@ -1,259 +1,232 @@
 /**
- * Contatori AGGREGATI della superficie MCP gratuita.
+ * Aggregate usage counters for the free MCP surface.
  *
- * Perche' esiste: contiamo le chiamate PAGATE su x402 (208 in due mesi, 23 wallet) ma sulla
- * superficie GRATUITA — l'MCP, che e' la porta da cui un agente entra davvero perche' non
- * costa nulla ed e' nei registri — non contavamo NIENTE. Risultato: 2.338 installazioni del
- * pacchetto npm e zero visibilita' su quante producano una sola chiamata. Ogni risposta alla
- * domanda "quanti agenti ci usano" copriva solo la meta' a pagamento, che i crawler di
- * catalogo tengono viva da soli.
+ * Why it exists: paid x402 calls are counted elsewhere, but the FREE surface — the hosted MCP
+ * server, which is how an agent normally arrives, because it costs nothing and is listed in the
+ * public registries — was not counted at all. Without it, any answer to "how many agents use
+ * this" covers only the paid half, which catalogue crawlers keep alive on their own.
  *
- * COSA SI CONTA: il nome del metodo JSON-RPC e, per tools/call, il nome dello strumento —
- * preso dalla NOSTRA lista fissa, mai dal testo del chiamante (altrimenti chiunque potrebbe
- * scrivere chiavi arbitrarie nel contatore).
+ * WHAT IS COUNTED: the JSON-RPC method name and, for tools/call, the tool name — taken from
+ * this server's own fixed list, never from the caller's text (otherwise anyone could write
+ * arbitrary keys into the counter).
  *
- * COSA NON SI CONTA, DI PROPOSITO: nessun IP, nessun user-agent, nessun identificativo del
- * chiamante, nessun argomento, nessun orario per singola chiamata. Solo totali giornalieri
- * per chiave. Non e' un tracciamento di chi chiama: e' un conteggio di cosa viene chiamato,
- * e la differenza e' esattamente la regola che ci siamo dati sul non profilare nessuno.
+ * WHAT IS DELIBERATELY NOT COUNTED: no IP address, no user agent, no caller identifier, no
+ * arguments, no per-call timestamps. Daily totals per key only. This is not tracking who
+ * calls: it is a count of what is called, and that difference is the rule.
  *
- * PRECISIONE DICHIARATA: i totali sono un LIMITE INFERIORE. I contatori vivono in memoria
- * nell'isolate che serve la richiesta e vengono scaricati su KV a lotti; un isolate sfrattato
- * prima dello scarico perde il suo lotto, e due scarichi simultanei possono sovrascriversi.
- * Meglio un numero onestamente approssimato per difetto che un numero preciso inventato.
+ * DECLARED ACCURACY: totals are a LOWER BOUND. Counters live in memory in the isolate serving
+ * the request and are flushed in batches; an isolate evicted before its flush loses its batch.
+ * An honestly under-reported number is better than a precise invented one.
  *
- * BUDGET KV: le scritture sono limitate dal numero di chiamate (nessuna chiamata, nessuna
- * scrittura) e comunque a un lotto ogni 20 secondi per isolate, che diventano 5 minuti dopo
- * 200 scarichi. Il tetto free e' 1000 scritture al giorno e ne usiamo gia' circa 600 per
- * l'osservatore delle promesse.
+ * WRITE BUDGET: writes are bounded by the number of calls (no calls, no writes) and in any case
+ * to one batch per interval per isolate, an interval that lengthens after a threshold, so
+ * counting can never exhaust the storage allowance the daily promise seals depend on.
  */
 
-const GIORNI_TTL = 120 * 86400;
-const LOTTO_MAX = 1000;        // il lotto non forza mai la scrittura: comanda solo l'orologio
-let attesaMs = 60_000;         // un lotto al minuto per isolate (con D1 il budget lo regge)
-const RALLENTA_DOPO = 240;     // dopo 240 lotti si passa a 5 minuti: freno anti-fuga, non budget
-const STOP_DOPO = 600;         // tetto di sicurezza per isolate, non un limite atteso
+const DAYS_TTL = 120 * 86400;
+const BATCH_MAX = 1000;        // batch size never forces a write: the clock decides
+let waitMs = 60_000;         // one batch per minute per isolate
+const SLOW_DOWN_AFTER = 240;     // past 240 batches the interval becomes 5 minutes: runaway brake
+const STOP_AFTER = 600;         // safety cap per isolate, not an expected limit
 
-// 27/08, ORE 8 DEL MATTINO: Cloudflare ha avvisato che l'account era al 90% del tetto KV
-// giornaliero. Il consumo nuovo era questo contatore, acceso ieri sera: uno scanner esterno
-// enumera la superficie ogni due minuti e ogni chiamata faceva una scrittura. Il conteggio
-// serve a sapere QUANTE chiamate al giorno, non a quale minuto siano arrivate: un lotto
-// all'ora da' lo stesso numero al costo di 24 scritture invece di 500.
-// La regola resta: i sigilli delle promesse vengono prima del contatore. Se il budget si
-// stringe, si perde il conteggio, mai il sigillo.
+// Why the counter throttles itself: external scanners enumerate this surface every couple of
+// minutes. At that rate, one write per call would consume the daily storage allowance, part of
+// which is reserved for the daily seals of the public promises; overrunning it would mean not
+// sealing, that is, breaking the very promise being attested. The question here is HOW MANY
+// calls happen per day, not at which minute they arrived, so one batch per interval yields the
+// same daily number at a fraction of the write cost. The throttling is declared in the public
+// report. The priority is fixed: seals come before counting.
 
-// Misurato il 27/08: uno scanner esterno enumera la superficie ~ogni due minuti (495 chiamate
-// in sette ore). A quel ritmo una scrittura per chiamata mangerebbe il tetto KV free (1000 al
-// giorno) di cui ~600 servono ai sigilli delle promesse: sforare significherebbe non sigillare,
-// cioe' rompere proprio la promessa che attestiamo. Il conteggio non vale quel rischio, quindi
-// il contatore si strozza da solo e lo dichiara nel report.
-
-// Elenco CHIUSO dei metodi JSON-RPC. Il 26/08 nel contatore e' comparsa la chiave
-// "this/method/does/not/exist": avevo protetto i nomi dei TOOL prendendoli dalla nostra lista,
-// ma i nomi dei METODI li scrivevo come arrivavano — cioe' chiunque poteva creare chiavi nuove
-// all'infinito e gonfiare il documento del giorno. Fuori da questo elenco si conta "other".
-const METODI = new Set([
+// CLOSED list of JSON-RPC methods. Tool names are taken from this server's own list, and
+// method names must be too: a method name copied straight from the request would let any
+// caller mint new counter keys without limit and inflate the day's record. Anything outside
+// this list is counted as "other".
+const METHODS = new Set([
   "initialize", "ping", "tools/list", "tools/call",
   "prompts/list", "prompts/get", "resources/list", "resources/read",
 ]);
-export const metodoNoto = (m) => (METODI.has(m) ? m : "other");
+export const knownMethod = (m) => (METHODS.has(m) ? m : "other");
 
-// ── PERCHE' I TENTATIVI FALLITI (04/09/2026) ────────────────────────────────
-// Il 03/09 il contatore ha registrato 4 chiamate a receipts.seal e il log non ha prodotto
-// nessuna foglia: qualcuno ha provato a sigillare e ha fallito quattro volte. Sapevamo CHE
-// avevano provato, non PERCHE' avessero fallito — e la differenza cambia cosa dobbiamo fare:
-// se il motivo e' "schema", il problema puo' essere NOSTRO (istruzioni poco chiare, campi
-// troppo rigidi) ed e' una cosa che possiamo sistemare; se e' "quota", e' interesse vero.
-// Si conta SOLO il motivo, da un elenco CHIUSO. Niente su chi chiama: nessun IP, nessun
-// user-agent, nessuna identita', nessun argomento. La regola del founder non si tocca.
-// Lista CHIUSA. Allargata il 06/09 con i tre modi in cui puo' fallire una chiamata PAGATA:
-// metodo sbagliato, servizio a valle muto, configurazione nostra mancante. Senza questi, un
-// pagamento senza consegna restava invisibile — e il 05/09 ce n'e' stato uno.
-const MOTIVI = new Set(["ok", "schema", "quota", "mode", "json", "internal",
+// ── WHY FAILED ATTEMPTS ARE COUNTED ────────────────────────────────────────
+// A seal attempt that produces no leaf means someone tried and failed. Knowing THAT they tried
+// is not enough: the reason decides what has to change. If the reason is "schema", the problem
+// may well be on this side (unclear instructions, over-strict fields) and can be fixed; if it
+// is "quota", it is genuine interest.
+// Only the reason is counted, from a CLOSED list. Nothing about the caller: no IP, no user
+// agent, no identity, no arguments.
+// The list also covers the three ways a PAID call can fail: wrong method, silent upstream
+// service, missing server-side configuration. Without those, a payment taken without delivery
+// would stay invisible.
+const REASONS = new Set(["ok", "schema", "quota", "mode", "json", "internal",
                         "metodo", "upstream", "config"]);
-export function contaEsito(chiave, motivo) {
-  contaChiamata("esito:" + chiave, MOTIVI.has(motivo) ? motivo : "internal");
+export function countOutcome(key, reason) {
+  countCall("esito:" + key, REASONS.has(reason) ? reason : "internal");
 }
 
-// Misurato il 26/08 al primo collaudo: con la soglia a 10 chiamate / 10 minuti, su 12
-// chiamate ne risultavano 5. Non era un errore di conteggio, era il regime sbagliato: le
-// richieste si spargono su piu' isolate, nessuno riempie il lotto e nessuno vive abbastanza
-// da far scadere il timer, quindi i lotti muoiono con l'isolate. A dieci chiamate al giorno
-// il batching non serve: serve scrivere subito. Il lotto resta solo come protezione se un
-// giorno il traffico esplode.
+// A high batch threshold on a long timer does not work at low traffic: requests spread across
+// several isolates, no batch fills up, and no isolate lives long enough for the timer to
+// expire, so batches die with their isolate. At a handful of calls a day the batch has to be
+// written promptly; the size threshold is only there in case traffic ever explodes.
 
-// Stato per-isolate. Non sopravvive allo sfratto: e' voluto e dichiarato sopra.
+// Per-isolate state. It does not survive eviction: that is intended and declared above.
 const buffer = new Map();
-let ultimoScarico = 0;
-let scarichiFatti = 0;
-let inCorso = null;
+let lastFlush = 0;
+let flushesDone = 0;
+let inFlight = null;
 
 export const utcDayKey = (d = new Date()) => d.toISOString().slice(0, 10);
-const chiaveGiorno = (giorno) => `mcpuse:${giorno}`;
+const dayDocKey = (day) => `mcpuse:${day}`;
 
 /**
- * Registra una chiamata. `strumento` viene passato SOLO se e' un nome che conosciamo.
+ * Record a call. `tool` is passed ONLY when it is a name from this server's own list.
  */
-export function contaChiamata(metodo, strumento) {
-  const chiave = strumento ? `${metodo}:${strumento}` : metodo;
-  buffer.set(chiave, (buffer.get(chiave) || 0) + 1);
-  // Un tentativo di sigillo e' raro e non deve morire con l'isolate aspettando l'orologio.
-  if (CHIAVI_SEMPRE.has(chiave)) urgente = true;
+export function countCall(method, tool) {
+  const key = tool ? `${method}:${tool}` : method;
+  buffer.set(key, (buffer.get(key) || 0) + 1);
+  // A seal attempt is rare and must not die with the isolate while waiting for the clock.
+  if (ALWAYS_WRITE_KEYS.has(key)) urgent = true;
 }
 
-function daScaricare() {
+function shouldFlush() {
   if (buffer.size === 0) return false;
-  let totale = 0;
-  for (const n of buffer.values()) totale += n;
-  return totale >= LOTTO_MAX || Date.now() - ultimoScarico >= attesaMs;
+  let total = 0;
+  for (const n of buffer.values()) total += n;
+  return total >= BATCH_MAX || Date.now() - lastFlush >= waitMs;
 }
 
 /**
- * Scarica il lotto su KV: una lettura + una scrittura, sulla chiave del giorno UTC.
- * Non solleva mai: un contatore non deve poter rompere una risposta.
+ * Flush the batch to storage, on the UTC-day key.
+ * Never throws: a counter must not be able to break a response.
  */
-// ─── STORIA DI QUESTO CONTATORE ────────────────────────────────────────
-// 27/08: Cloudflare avvisa che l'account e' al 90% del tetto KV giornaliero. Il consumo nuovo
-// era questo contatore. 28/08: scritture SOSPESE, perche' il freno che avevo messo (20 scritture
-// per isolate) non limitava niente — Cloudflare fa girare molti isolate, e venti ciascuno fanno
-// comunque centinaia al giorno. Con KV non c'era modo di contarle globalmente senza usare... KV.
-//
-// 02/09/2026: RIACCESE, su un contenitore diverso. Il contatore ora scrive su **D1**, non su KV:
-//   - il tetto free di D1 e' 100.000 righe scritte al giorno contro le 1.000 di KV;
-//   - ed e' una QUOTA SEPARATA, quindi il contatore non puo' piu' mettere in pericolo i sigilli
-//     giornalieri delle promesse, che restano su KV.
-// In piu' l'UPSERT di D1 (`n = n + excluded.n`) e' ATOMICO: sparisce la perdita da scrittura
-// concorrente che con KV eravamo costretti a dichiarare (leggi-modifica-scrivi).
-//
-// La priorita' dichiarata NON cambia: i sigilli delle promesse vengono prima del contatore.
-// Semplicemente ora non sono piu' in concorrenza per la stessa quota.
-//
-// I giorni gia' registrati su KV (26-28/08, piu' i tentativi di sigillo dal 30/08) restano
-// leggibili: il report li unisce a quelli nuovi.
-const SCRITTURE_ATTIVE = true;
+// Counts are written to D1, deliberately not to KV:
+//   - the free allowance of D1 is 100,000 written rows per day against 1,000 for KV;
+//   - it is a SEPARATE quota, so counting can no longer put at risk the daily seals of the
+//     public promises, which stay on KV;
+//   - the D1 upsert (`n = n + excluded.n`) is ATOMIC, so the lost update of a concurrent
+//     read-modify-write on KV no longer applies.
+// The declared priority is unchanged: promise seals come before the counter; they are simply
+// no longer competing for the same quota.
+// Days already recorded on KV stay readable: the report merges them with the new ones.
+const WRITES_ENABLED = true;
 
-// ECCEZIONE STRETTA (30/08/2026). Con le scritture sospese non sapevamo se qualcuno avesse
-// PROVATO a sigillare e fosse fallito: l'unica domanda che contava restava senza risposta.
-// Queste due chiavi contano tentativi RARI (oggi: unita' al giorno, non centinaia come gli
-// scanner), quindi passano anche a scritture sospese e costano una manciata di put. Il resto
-// del traffico resta muto. La priorita' dichiarata non cambia: i sigilli delle promesse prima
-// del contatore.
-const CHIAVI_SEMPRE = new Set([
+// NARROW EXCEPTION. These keys count RARE attempts (units per day, not the hundreds a scanner
+// produces), so they are written even while general counting is throttled, at a cost of a
+// handful of writes. The rest of the traffic stays silent. The declared priority does not
+// change: promise seals come before the counter.
+const ALWAYS_WRITE_KEYS = new Set([
   "http:/v1/seal-demo", "tools/call:receipts.seal",
-  // gli esiti sono rari quanto i tentativi: passano anche a scritture strozzate
+  // outcomes are as rare as the attempts: they pass even when writes are throttled
   "esito:receipts.seal:ok", "esito:receipts.seal:schema", "esito:receipts.seal:quota",
   "esito:receipts.seal:mode", "esito:receipts.seal:internal",
   "esito:seal-demo:ok", "esito:seal-demo:schema", "esito:seal-demo:quota",
   "esito:seal-demo:json", "esito:seal-demo:internal",
-  // IL PERCORSO PAGATO. Aggiunto il 06/09/2026 dopo il primo sigillo pagato post-correzione:
-  // il conteggio era rimasto nel buffer per-isolate ed e' MORTO con l'isolate, perche' un
-  // sigillo pagato e' un evento isolato e non riempie mai un lotto. Cioe' il contatore nato
-  // per rendere visibili i fallimenti pagati e' sparito alla prima chiamata pagata.
-  // Questi sono i piu' rari di tutti: devono scriversi subito, sempre.
+  // THE PAID PATH. A paid seal is an isolated event and never fills a batch, so its count
+  // stayed in the per-isolate buffer and DIED with the isolate: the counter built to make paid
+  // failures visible disappeared on the first paid call. These keys are the rarest of all and
+  // must be written immediately, always.
   "esito:seal-paid:ok", "esito:seal-paid:schema", "esito:seal-paid:json",
   "esito:seal-paid:metodo", "esito:seal-paid:upstream", "esito:seal-paid:config",
   "esito:seal-paid:internal",
 ]);
-let urgente = false;
+let urgent = false;
 
-export async function scarica(env, forza = false) {
+export async function flushUsageNow(env, force = false) {
   if (buffer.size === 0) return;
   const db = env.USAGE;
-  if (!db) return;                       // nessun D1 collegato (sviluppo locale): non si conta
-  if (scarichiFatti >= STOP_DOPO) return;
-  if (!SCRITTURE_ATTIVE && !urgente) return;
-  if (!forza && !urgente && !daScaricare()) return;
-  if (inCorso) return inCorso;
+  if (!db) return;                       // no D1 binding (local development): nothing is counted
+  if (flushesDone >= STOP_AFTER) return;
+  if (!WRITES_ENABLED && !urgent) return;
+  if (!force && !urgent && !shouldFlush()) return;
+  if (inFlight) return inFlight;
 
-  const lotto = new Map(buffer);
+  const batch = new Map(buffer);
   buffer.clear();
-  urgente = false;
-  if (lotto.size === 0) return;
-  ultimoScarico = Date.now();
-  if (++scarichiFatti > RALLENTA_DOPO) attesaMs = 5 * 60_000;
+  urgent = false;
+  if (batch.size === 0) return;
+  lastFlush = Date.now();
+  if (++flushesDone > SLOW_DOWN_AFTER) waitMs = 5 * 60_000;
 
-  inCorso = (async () => {
+  inFlight = (async () => {
     try {
-      const giorno = utcDayKey();
+      const day = utcDayKey();
       const q = db.prepare(
         "INSERT INTO usage_daily (day,k,n) VALUES (?,?,?) " +
         "ON CONFLICT(day,k) DO UPDATE SET n = n + excluded.n",
       );
-      await db.batch([...lotto].map(([k, n]) => q.bind(giorno, k, n)));
+      await db.batch([...batch].map(([k, n]) => q.bind(day, k, n)));
     } catch {
-      // D1 giu': il lotto e' perso e il totale resta un limite inferiore, come dichiarato.
-      // Non lo rimettiamo nel buffer per non farlo crescere all'infinito.
+      // D1 unavailable: the batch is lost and the total stays a lower bound, as declared.
+      // It is not put back into the buffer, to keep the buffer from growing without bound.
     } finally {
-      inCorso = null;
+      inFlight = null;
     }
   })();
-  return inCorso;
+  return inFlight;
 }
 
 /**
- * Scarico DIFFERITO: aspetta qualche secondo e poi scrive comunque.
+ * DEFERRED flush: wait a few seconds, then write anyway.
  *
- * Serve perche' lo scarico "all'inizio della richiesta" scrive il lotto PRECEDENTE, quindi
- * l'ultima richiesta vista da un isolate resta sempre in sospeso e muore con lui. Misurato
- * il 26/08: su 5 rotte gratuite chiamate a distanza di un secondo, ne comparivano 3.
- * Con l'attesa, ogni richiesta fa scrivere anche se ne', e le chiamate ravvicinate si fondono
- * comunque perche' il buffer e' condiviso nell'isolate.
+ * Flushing at the start of a request writes the PREVIOUS batch, so the last request an isolate
+ * sees always stays pending and dies with it. With the wait, every request also causes its own
+ * batch to be written, and closely spaced calls still merge because the buffer is shared inside
+ * the isolate.
  *
- * Il `force` vale solo finche' questo isolate ha scritto poco: oltre la soglia si torna al
- * ritmo normale, perche' il tetto KV free e' 1000 scritture al giorno e ~600 servono ai sigilli.
+ * `force` applies only while this isolate has written little: past the threshold the normal
+ * rhythm resumes, so a single isolate cannot consume the write allowance on its own.
  */
-export async function scaricoDifferito(env, ms = 2000) {
+export async function deferredFlush(env, ms = 2000) {
   await new Promise((r) => setTimeout(r, ms));
-  return scarica(env, scarichiFatti < RALLENTA_DOPO);
+  return flushUsageNow(env, flushesDone < SLOW_DOWN_AFTER);
 }
 
 /**
- * Report pubblico e gratuito: ultimi `giorni` giorni, per chiave.
+ * Public, free report: the last `days` days, per key.
  */
-export async function usoRecente(env, giorni = 14) {
-  const perGiorno = new Map();   // giorno -> { chiave: n }
-  const totali = {};
-  const somma = (giorno, k, n) => {
-    if (!perGiorno.has(giorno)) perGiorno.set(giorno, {});
-    const d = perGiorno.get(giorno);
+export async function recentUsage(env, days = 14) {
+  const perDay = new Map();   // day -> { key: n }
+  const totals = {};
+  const add = (day, k, n) => {
+    if (!perDay.has(day)) perDay.set(day, {});
+    const d = perDay.get(day);
     d[k] = (d[k] || 0) + n;
-    totali[k] = (totali[k] || 0) + n;
+    totals[k] = (totals[k] || 0) + n;
   };
-  const daGiorno = utcDayKey(new Date(Date.now() - (giorni - 1) * 86400_000));
+  const fromDay = utcDayKey(new Date(Date.now() - (days - 1) * 86400_000));
 
-  // Sorgente corrente: D1 (dal 02/09/2026).
+  // Current source: D1.
   let d1ok = false;
   if (env.USAGE) {
     try {
       const r = await env.USAGE.prepare(
         "SELECT day, k, n FROM usage_daily WHERE day >= ? ORDER BY day DESC",
-      ).bind(daGiorno).all();
-      for (const row of r.results || []) somma(row.day, row.k, row.n);
+      ).bind(fromDay).all();
+      for (const row of r.results || []) add(row.day, row.k, row.n);
       d1ok = true;
     } catch { d1ok = false; }
   }
 
-  // Sorgente storica: i giorni scritti su KV prima del trasloco. Si legge, non si scrive.
+  // Historical source: the days written to KV before the move. Read only, never written.
   if (env.COHERENCE) {
-    for (let i = 0; i < giorni; i++) {
-      const giorno = utcDayKey(new Date(Date.now() - i * 86400_000));
+    for (let i = 0; i < days; i++) {
+      const day = utcDayKey(new Date(Date.now() - i * 86400_000));
       let doc = null;
-      try { doc = JSON.parse((await env.COHERENCE.get(chiaveGiorno(giorno))) || "null"); } catch { doc = null; }
+      try { doc = JSON.parse((await env.COHERENCE.get(dayDocKey(day))) || "null"); } catch { doc = null; }
       if (!doc) continue;
-      for (const [k, n] of Object.entries(doc)) somma(giorno, k, n);
+      for (const [k, n] of Object.entries(doc)) add(day, k, n);
     }
   }
 
-  const righe = [...perGiorno.entries()]
+  const rows = [...perDay.entries()]
     .sort((a, b) => (a[0] < b[0] ? 1 : -1))
     .map(([day, calls]) => ({ day, calls }));
 
   return {
     surface: "free surfaces: hosted MCP + the public proof endpoints (receipts, log, checkpoints, coherence)",
-    window_days: giorni,
-    total_calls: Object.values(totali).reduce((a, b) => a + b, 0),
-    by_key: totali,
-    daily: righe,
+    window_days: days,
+    total_calls: Object.values(totals).reduce((a, b) => a + b, 0),
+    by_key: totals,
+    daily: rows,
     method:
       "Aggregate counts of WHAT was called: for MCP, the JSON-RPC method plus the tool name for tools/call (taken from this server's own fixed list; a name that exists only in our stdio npm package is counted as tools/call:stdio-only:<name> since 2026-09-10, so a client that learned the stdio names from the ERC-8004 registration or the README can be told apart from a fuzzer — the names are ours, not the caller's); for HTTP, the free proof endpoints normalised to a fixed set of paths, so an invented path cannot create a new key. Counted since 2026-08-26.",
     outcomes:

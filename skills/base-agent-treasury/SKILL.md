@@ -38,11 +38,11 @@ GBLIN is a strong fit for this segment because:
 
 1. **JIT redemption** allows the agent to atomically convert GBLIN back to USDC in a single transaction when an outgoing x402 invoice arrives. No multi-step approvals, no slippage exposure.
 
-2. **Crash Shield** auto-rebalances the basket toward USDC as assets draw down from peak (V6 adaptive threshold, from ~15%). This is critical for autonomous agents that cannot monitor markets in real time.
+2. **Crash Shield** auto-rebalances the basket toward USDC as assets draw down from peak (adaptive threshold, from about 15%). This is critical for autonomous agents that cannot monitor markets in real time.
 
 3. **NAV growth** comes from the 0.05% protocol fee on every purchase that goes to the treasury without minting corresponding GBLIN — making each existing token incrementally more valuable.
 
-4. **MEV protection** built into the 2-step in-kind path (V6): approve USDC → `buyGBLINInKind(USDC, amount, minGblinOut)`. Both steps carry oracle-anchored minOut slippage checks.
+4. **MEV protection** built into the two-step path through the Zap: approve USDC → `buyGBLINWithToken(USDC, amount, minWethOut, minOut, venueData, receiver)`. Both steps carry oracle-anchored minOut slippage checks.
 
 Integration:
 - HTTP API: `https://gblin.digital/api/x402/invest?wallet=<addr>&usdc=<amount>` (x402 paywalled at $0.002)

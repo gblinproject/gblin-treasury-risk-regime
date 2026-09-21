@@ -15,7 +15,7 @@ This plugin fetches unsigned calldata from the GBLIN MCP server (`@gblin-protoco
 
 **Supported chain:** Base mainnet (`8453` / `0x2105`).
 
-**Contract (production):** `0x36C81d7E1966310F305eA637e761Cf77F90852f0`
+**Vault:** `0xc2181d975c05c8c724b334bcED0764c0b86B1D53` · **Lens (reads and quotes):** `0xfCFea8027019E8551A1f09AD91532471F5D26f61` · **Zap (mint with any token, exit to ETH):** `0x0E9D6Ceb6D313b021622C121Cda9C62e86e60200`
 
 **Timelock (owner):** `0x6aBeC8716fFeEcf7C3D6e68255b4797113E8e5Dd` — every owner-only change is scheduled and executes only after a 48h delay. Parameters can change through it, so never describe the protocol as immutable.
 
@@ -106,7 +106,7 @@ Args: {
 Returns: {
   transactions: [
     { step: "approve", to: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", data: "0x...", value: "0x0", chainId: 8453 },
-    { step: "buy",     to: "0x36C81d7E1966310F305eA637e761Cf77F90852f0", data: "0x...", value: "0x0", chainId: 8453 }
+    { step: "buy",     to: "0x0E9D6Ceb6D313b021622C121Cda9C62e86e60200", data: "0x...", value: "0x0", chainId: 8453 }
   ]
 }
 ```
@@ -129,12 +129,14 @@ Args: {
 }
 Returns: {
   transactions: [
-    { step: "sell", to: "0x36C81d7E1966310F305eA637e761Cf77F90852f0", data: "0x...", value: "0x0", chainId: 8453 }
+    { step: "approve", to: "0xc2181d975c05c8c724b334bcED0764c0b86B1D53", data: "0x...", value: "0x0", chainId: 8453 },
+    { step: "sell",    to: "0x0E9D6Ceb6D313b021622C121Cda9C62e86e60200", data: "0x...", value: "0x0", chainId: 8453 },
+    { step: "swap",    to: "0x2626664c2603336E57B271c5C0b26F421741e481", data: "0x...", value: "0x...", chainId: 8453 }
   ]
 }
 ```
 
-> **Cooldown notice:** GBLIN enforces a 2-minute cooldown between buy and sell for the same address. Always call `analyze_treasury_health` first. If `cooldown_remaining_s > 0`, tell the user to wait before selling.
+> **Cooldown notice:** the vault enforces a short cooldown between a mint and a redemption by the same address (20 seconds at launch; read live). Always call `analyze_treasury_health` first. If `cooldown_remaining_s > 0`, tell the user to wait before selling.
 
 **Steps before calling:**
 1. `get_wallets` → `address`
@@ -207,8 +209,8 @@ For multi-step flows (approve + buy), include both calls in the same `send_calls
 |------|--------|
 | **Always quote first** | Call `quote_safe_swap` before any prepare tool. Never skip slippage check. |
 | **Cooldown enforced onchain** | Selling within 2 min of buying will revert. Surface this to the user proactively. |
-| **Min deposit** | Minimum buy is 0.0005 ETH equivalent (~$1). Reject smaller amounts with a clear message. |
-| **Fee disclosure** | 0.1% fee on buy: 0.05% to founder wallet, 0.05% increases intrinsic NAV for all holders. Transfers are fee-free. |
+| **Min deposit** | None. Any amount mints; below a few dollars the gas exceeds the value moved. |
+| **Fee disclosure** | 0.10% on every mint with ETH or WETH: 0.05% stays in the vault and lifts the NAV, 0.05% is minted as shares to the fee recipient. A 0.50% yearly management fee accrues as shares. Redemption in kind and transfers are fee-free. |
 | **Crash Shield** | If `crash_shield_active: true`, USDC weight increases automatically; inform the user before they buy. |
 | **Timelock** | Any governance change takes ≥48h to execute. The protocol cannot be rug-pulled instantly. |
 | **Never send private keys** | GBLIN tools are read-only or unsigned calldata only. No key material ever leaves the user's Base Account. |
@@ -219,7 +221,9 @@ For multi-step flows (approve + buy), include both calls in the same `send_calls
 
 | Asset | Address |
 |-------|---------|
-| GBLIN contract | `0x36C81d7E1966310F305eA637e761Cf77F90852f0` |
+| GBLIN vault | `0xc2181d975c05c8c724b334bcED0764c0b86B1D53` |
+| GBLIN Lens | `0xfCFea8027019E8551A1f09AD91532471F5D26f61` |
+| GBLIN Zap | `0x0E9D6Ceb6D313b021622C121Cda9C62e86e60200` |
 | GBLIN Timelock | `0x6aBeC8716fFeEcf7C3D6e68255b4797113E8e5Dd` |
 | USDC (Base) | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
 | WETH (Base) | `0x4200000000000000000000000000000000000006` |
@@ -234,7 +238,5 @@ For multi-step flows (approve + buy), include both calls in the same `send_calls
 - Whitepaper (this is the specification; there is no PDF): https://github.com/gblinproject/GBLIN-Protocol
 - MCP server (NPM): `@gblin-protocol/mcp-server`
 - MCP source: https://github.com/gblinproject/gblin-treasury-risk-regime
-- Aerodrome pool: https://dexscreener.com/base/0x7dcd4f5bcdae0546c84dab54401a93ad6e92ae1b
-- Morpho market: https://app.morpho.org/base/market/0x8f086a90c1a92be751ac641f2a1ca6458695889bf50a6caba9566b4c9c585a62/gblin-usdc
 - DeFiLlama TVL: https://defillama.com/protocol/tvl/global-balanced-liquidity-index
-- BaseScan: https://basescan.org/address/0x36C81d7E1966310F305eA637e761Cf77F90852f0
+- BaseScan: https://basescan.org/address/0xc2181d975c05c8c724b334bcED0764c0b86B1D53

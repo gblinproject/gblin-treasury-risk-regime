@@ -56,11 +56,10 @@ export interface PaywallDef {
 export const TOOL_PRICES: Record<string, PaywallDef> = {
   get_market_risk_regime:  { priceUsdc: "0.002", priceLabel: "$0.002 USDC per call" },
   analyze_treasury_health: { priceUsdc: "0.003", priceLabel: "$0.003 USDC per call" },
-  find_keeper_bounty:      { priceUsdc: "0.001", priceLabel: "$0.001 USDC per call" },
   // swap_gblin_to_usdc_jit and invest_usdc_to_gblin are FREE:
   // they are the core transport layer — paywalling them creates a chicken-and-egg
   // problem (agent needs USDC to pay for the tool that gives them USDC).
-  // Revenue from those flows comes from the on-chain founder fee (0.05% per swap).
+  // Revenue from those flows comes from the on-chain protocol fee (0.05% of every mint, paid as shares).
 };
 
 // ─── Payment proof schema ─────────────────────────────────────────────────────

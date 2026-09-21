@@ -1,29 +1,29 @@
-// catalog.mjs — OSSERVATORIO DEL CATALOGO x402 (v1: osservazione + feed).
+// catalog.mjs — x402 CATALOG OBSERVATORY (v1: probing + feed).
 //
-// Perché esiste: il catalogo discovery conta ~15.000 risorse e la domanda pagante
-// più concreta dell'ecosistema è "chi è VIVO?" — misurata sui payer che bruciano
-// $2-50/giorno sondando tutto a forza bruta. Qui la risposta viene prodotta una
-// volta e servita a tutti: sondiamo le TOP-N risorse a rotazione e pubblichiamo
-// stato/latenza/anzianità. Il feed completo è monetizzato dalla webapp (x402);
-// qui restano il probing e una vista gratuita limitata.
+// Why it exists: the discovery catalogue lists on the order of 15,000 resources, and the most
+// concrete paying demand in the ecosystem is "which of them is ALIVE?" — today answered by
+// payers who burn money probing everything by brute force. Here the answer is produced once
+// and served to everyone: the top-N resources are probed in rotation and their status, latency
+// and age are published. The full feed is monetised over x402 by the web app; probing and a
+// limited free view live here.
 //
-// REGOLE PRE-REGISTRATE (non cambiarle senza dichiararlo):
-//  - Selezione: le TRACK_N risorse più recenti per lastUpdated nel discovery CDP
-//    (+ sempre le nostre). Refresh della lista 1 volta al giorno.
-//  - "alive" (REGOLA v2 dal 18/08/2026) = risponde entro 8s con: 402 e challenge
-//    che espone accepts[] — letta dall'header PAYMENT-REQUIRED (base64 JSON, il
-//    formato x402 v2) OPPURE dal corpo — oppure 2xx (risorsa free). Se la GET
-//    ottiene 400/404/405 (rotta POST-only) si ritenta UNA volta in POST con {}.
-//    Qualsiasi altro esito = not-ok (codice registrato). Le sonde NON pagano mai.
-//    STORIA: la v1 (16-18/08) leggeva SOLO il corpo e SOLO in GET: misurava il
-//    dialetto, non la vita (33.7% vs 98.9% sugli stessi 276 target, cross-check
-//    del 18/08 innescato da una segnalazione terza nello Slack x402). Dichiarato
-//    pubblicamente in METHODOLOGY.changelog; i contatori fails della v1 azzerati.
-//  - Nessun giudizio, solo fatti misurati: code, ms, lastOkAt, fails consecutivi.
+// PRE-REGISTERED RULES (do not change them without declaring it):
+//  - Selection: the TRACK_N most recently updated resources by lastUpdated in the CDP
+//    discovery catalogue, plus this operator's own endpoints, which are always included.
+//    The list is refreshed once a day.
+//  - "alive" (RULE v2) = answers within 8s with either HTTP 402 and a challenge exposing
+//    accepts[] — read from the PAYMENT-REQUIRED header (base64 JSON, the x402 v2 form) OR
+//    from the body — or any 2xx (free resource). If the GET returns 400/404/405 (a POST-only
+//    route) it is retried ONCE with POST and an empty body. Any other outcome is not-ok, and
+//    the status code is recorded. Probes never pay.
+//    Rule v1 read the body only and only over GET, so it measured the dialect rather than
+//    liveness; the correction is declared publicly in METHODOLOGY.changelog and the v1
+//    consecutive-fail counters were reset at migration.
+//  - No judgements, only measured facts: code, ms, lastOkAt, consecutive fails.
 //
-// VINCOLI PIANO FREE (verificati): ≤50 subrequest/invocazione → PER_TICK sonde
-// per giro, saltando il tick del sigillo giornaliero; ≤1000 scritture KV/giorno
-// → UNA scrittura aggregata per tick. CPU: le attese fetch non contano.
+// FREE-PLAN LIMITS (verified): at most 50 subrequests per invocation -> PER_TICK probes per
+// round, skipping the tick of the daily seal; at most 1000 KV writes per day -> ONE aggregated
+// write per tick. CPU: time spent waiting on fetch does not count.
 
 const DISCOVERY_URL =
   "https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources";
@@ -35,7 +35,7 @@ const STATE_KEY = "cat:state";     // { updatedAt, cursor, entries: { url: {...}
 const OUR_PREFIX = "https://gblin.digital/";
 
 async function fetchDiscoveryTop(env) {
-  // 3 pagine da 100 → ordiniamo per lastUpdated e teniamo le TRACK_N più fresche.
+  // 3 pages of 100 -> sort by lastUpdated and keep the TRACK_N freshest.
   const all = [];
   for (let offset = 0; offset < 300; offset += 100) {
     try {
@@ -63,7 +63,7 @@ async function fetchDiscoveryTop(env) {
     urls.push(url);
     if (urls.length >= TRACK_N) break;
   }
-  // le nostre risorse sono SEMPRE osservate (siamo il primo soggetto del nostro strumento)
+  // this operator's own resources are ALWAYS probed: the tool is applied to its author first
   for (const u of urls.filter((u) => u.startsWith(OUR_PREFIX))) seen.add(u);
   if (![...seen].some((u) => u.startsWith(OUR_PREFIX))) {
     urls.unshift("https://gblin.digital/api/x402/attestation");
@@ -74,13 +74,13 @@ async function fetchDiscoveryTop(env) {
 const RULE_VERSION = 2;
 
 function challengeOk(r, bodyText) {
-  // x402 v2: challenge base64-JSON nell'header PAYMENT-REQUIRED; alcuni server la mettono (anche) nel corpo.
+  // x402 v2: base64-JSON challenge in the PAYMENT-REQUIRED header; some servers also put it in the body.
   const h = r.headers.get("payment-required") || r.headers.get("x-payment-required");
   if (h) {
-    try { const j = JSON.parse(atob(h)); if (Array.isArray(j?.accepts) && j.accepts.length > 0) return "header"; } catch { /* non base64 */ }
-    try { const j = JSON.parse(h); if (Array.isArray(j?.accepts) && j.accepts.length > 0) return "header"; } catch { /* non JSON */ }
+    try { const j = JSON.parse(atob(h)); if (Array.isArray(j?.accepts) && j.accepts.length > 0) return "header"; } catch { /* not base64 */ }
+    try { const j = JSON.parse(h); if (Array.isArray(j?.accepts) && j.accepts.length > 0) return "header"; } catch { /* not JSON */ }
   }
-  try { const j = JSON.parse(bodyText); if (Array.isArray(j?.accepts) && j.accepts.length > 0) return "body"; } catch { /* corpo non JSON */ }
+  try { const j = JSON.parse(bodyText); if (Array.isArray(j?.accepts) && j.accepts.length > 0) return "body"; } catch { /* body is not JSON */ }
   return null;
 }
 
@@ -109,7 +109,7 @@ async function probeVerb(url, method) {
 async function probeOne(url) {
   const g = await probeVerb(url, "GET");
   if (g.ok) return g;
-  // rotta POST-only (o che pretende un corpo): UN solo ritentativo in POST
+  // POST-only route (or one that requires a body): exactly ONE retry with POST
   if (g.code === 404 || g.code === 405 || g.code === 400 || g.code === 501) {
     const p = await probeVerb(url, "POST");
     if (p.ok) return p;
@@ -118,14 +118,14 @@ async function probeOne(url) {
   return g;
 }
 
-/** Un giro di sonde (chiamato dal cron, MAI nel tick del sigillo). */
+/** One round of probes (called from cron, NEVER in the seal tick). */
 export async function catalogTick(env, nowMs) {
   if (!env.COHERENCE) return;
   const now = nowMs ?? Date.now();
 
-  // lista: refresh 1/giorno (3 subrequest, solo in questo caso)
+  // list: refreshed once a day (3 subrequests, only in that case)
   let list = null;
-  try { list = JSON.parse(await env.COHERENCE.get(LIST_KEY)); } catch { /* prima volta */ }
+  try { list = JSON.parse(await env.COHERENCE.get(LIST_KEY)); } catch { /* first run */ }
   if (!list || now - (list.fetchedAt || 0) > 24 * 3600e3) {
     const urls = await fetchDiscoveryTop(env);
     if (urls.length) {
@@ -136,10 +136,10 @@ export async function catalogTick(env, nowMs) {
   if (!list?.urls?.length) return;
 
   let state = null;
-  try { state = JSON.parse(await env.COHERENCE.get(STATE_KEY)); } catch { /* prima volta */ }
+  try { state = JSON.parse(await env.COHERENCE.get(STATE_KEY)); } catch { /* first run */ }
   if (!state) state = { updatedAt: 0, cursor: 0, entries: {} };
   if ((state.rule || 1) < RULE_VERSION) {
-    // migrazione v1->v2: i "fails" della v1 erano artefatti di dialetto (corpo vs header), non assenze -> azzerati.
+    // v1 -> v2 migration: the v1 "fails" were dialect artefacts (body vs header), not absences -> reset.
     for (const e of Object.values(state.entries)) { e.fails = 0; delete e.ok; }
     state.rule = RULE_VERSION; state.ruleSince = now;
   }
@@ -158,12 +158,12 @@ export async function catalogTick(env, nowMs) {
     if (r.ok) { e.lastOkAt = now; e.fails = 0; } else { e.fails = (e.fails || 0) + 1; }
     state.entries[u] = e;
   }
-  // poti le voci uscite dalla lista (tienile 7 giorni per lo storico breve)
+  // prune entries that left the list (kept 7 days for short-term history)
   for (const [u, e] of Object.entries(state.entries)) {
     if (!list.urls.includes(u) && now - (e.lastProbeAt || 0) > 7 * 864e5) delete state.entries[u];
   }
   state.updatedAt = now;
-  await env.COHERENCE.put(STATE_KEY, JSON.stringify(state)); // UNA scrittura per tick
+  await env.COHERENCE.put(STATE_KEY, JSON.stringify(state)); // ONE write per tick
 }
 
 function summarize(state) {
@@ -179,10 +179,10 @@ function summarize(state) {
   };
 }
 
-/** Vista GRATUITA: aggregati + le nostre risorse in chiaro (dogfooding pubblico). */
+/** FREE view: aggregates plus this operator's own resources in the clear. */
 export async function catalogReport(env) {
   let state = null;
-  try { state = JSON.parse(await env.COHERENCE.get(STATE_KEY)); } catch { /* vuoto */ }
+  try { state = JSON.parse(await env.COHERENCE.get(STATE_KEY)); } catch { /* empty */ }
   const ours = {};
   for (const [u, e] of Object.entries(state?.entries || {})) {
     if (u.startsWith(OUR_PREFIX)) ours[u] = { ok: e.ok, code: e.code, ms: e.ms, last_ok: e.lastOkAt ? new Date(e.lastOkAt).toISOString() : null };
@@ -197,20 +197,19 @@ export async function catalogReport(env) {
   };
 }
 
-/** Feed COMPLETO per la webapp (che lo firma e lo vende via x402). Token condiviso. */
+/** FULL feed for the web app, which signs it and sells it over x402. Shared token. */
 export async function catalogFull(env, token) {
   if (!env.CATALOG_TOKEN || token !== env.CATALOG_TOKEN) return null;
   let state = null;
-  try { state = JSON.parse(await env.COHERENCE.get(STATE_KEY)); } catch { /* vuoto */ }
+  try { state = JSON.parse(await env.COHERENCE.get(STATE_KEY)); } catch { /* empty */ }
   return { summary: summarize(state), entries: state?.entries || {}, updated_at: state?.updatedAt || 0 };
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
- * OSSERVATORIO PUBBLICO (16/08/2026) — il report completo diventa un artefatto
- * citabile: pagina HTML datata + JSON grezzo a URL stabile + badge SVG.
- * Gratis per sempre, stesse regole per tutti — i NOSTRI endpoint compaiono
- * nella stessa tabella e sono giudicati dalle stesse sonde (niente voti su
- * misura per noi: è il punto dell'intero strumento).
+ * PUBLIC OBSERVATORY — the full report as a citable artefact: dated HTML page,
+ * raw JSON at a stable URL, and an SVG badge. Free forever, same rules for
+ * everyone — this operator's own endpoints appear in the same table and are
+ * judged by the same probes, which is the point of the whole tool.
  * ──────────────────────────────────────────────────────────────────────────*/
 
 const METHODOLOGY = {
@@ -235,7 +234,7 @@ const METHODOLOGY = {
 };
 
 function fullRows(state) {
-  // dopo un cambio di regola contano SOLO le sonde già rifatte con la regola corrente (niente mescolanze v1/v2)
+  // after a rule change only probes already re-run under the current rule count (no v1/v2 mixing)
   return Object.entries(state?.entries || {})
     .filter(([, e]) => e.lastProbeAt && (e.rule || 1) === RULE_VERSION)
     .map(([u, e]) => ({
@@ -254,8 +253,8 @@ function fullRows(state) {
 
 export async function observatoryJson(env) {
   let state = null, list = null;
-  try { state = JSON.parse(await env.COHERENCE.get(STATE_KEY)); } catch { /* vuoto */ }
-  try { list = JSON.parse(await env.COHERENCE.get(LIST_KEY)); } catch { /* vuoto */ }
+  try { state = JSON.parse(await env.COHERENCE.get(STATE_KEY)); } catch { /* empty */ }
+  try { list = JSON.parse(await env.COHERENCE.get(LIST_KEY)); } catch { /* empty */ }
   const inRotation = list?.urls?.length || Object.keys(state?.entries || {}).length;
   const rows = fullRows(state).filter((r) => !list?.urls || list.urls.includes(r.url));
   const alive = rows.filter((r) => r.alive).length;

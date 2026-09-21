@@ -15,13 +15,15 @@ import {
   CHAINLINK_AGGREGATOR_ABI,
   ERC20_ABI,
   GBLIN_ABI,
+  LENS_ABI,
 } from "./abi.js";
 import {
   BASKET_CACHE_TTL_MS,
   BPS_DENOMINATOR,
-  COOLDOWN_SECONDS,
+  COOLDOWN_SECONDS_FALLBACK,
   ETH_USD_FEED,
-  GBLIN_V6,
+  GBLIN_LENS,
+  GBLIN_VAULT,
   NAV_CACHE_TTL_MS,
   ORACLE_STALENESS_SECONDS,
   SLIPPAGE_CRASH_SHIELD_BPS,
@@ -82,10 +84,10 @@ export async function getNavUsd(): Promise<number> {
 
   const [ethPerGblinWei, ethPriceUsd] = await Promise.all([
     client.readContract({
-      address: GBLIN_V6,
-      abi: GBLIN_ABI,
-      functionName: "quoteSellGBLIN",
-      args: [parseUnits("1", 18)],
+      address: GBLIN_LENS,
+      abi: LENS_ABI,
+      functionName: "quoteSell",
+      args: [GBLIN_VAULT, parseUnits("1", 18)],
     }),
     getEthPriceUsd(),
   ]);
@@ -103,7 +105,6 @@ export async function getNavUsd(): Promise<number> {
 export interface BasketEntry {
   token: Address;
   oracle: Address;
-  poolFee: number;
   isStable: boolean;
   baseWeightBps: number;
   dynamicWeightBps: number;
@@ -120,12 +121,9 @@ export interface BasketState {
 let basketCache: { value: BasketState; fetchedAt: number } | null = null;
 
 /**
- * Reads basket(0), basket(1), basket(2) from the contract and derives whether
- * the Crash Shield is currently active.
- *
- * Crash Shield is "active" if any asset has dynamicWeight < baseWeight, which
- * happens when the contract's `refreshWeights()` detects a severe drawdown
- * (V6 adaptive threshold, starting ~15% and scaling with volatility).
+ * Reads every basket row through the Lens and reports whether the Crash Shield is active on any of
+ * them. The shield's own flag is used, not a comparison of weights: a row can keep its weight and
+ * still be shielded.
  */
 export async function getBasketState(): Promise<BasketState> {
   const now = Date.now();
@@ -138,40 +136,38 @@ export async function getBasketState(): Promise<BasketState> {
   let totalBase = 0;
   let totalDynamic = 0;
 
-  // Basket has exactly 3 slots in V5 (cbBTC, WETH, USDC). We probe defensively
-  // up to 8 so future asset additions don't break the tool.
-  for (let i = 0; i < 8; i++) {
+  const rowCount = await client.readContract({
+    address: GBLIN_LENS,
+    abi: LENS_ABI,
+    functionName: "basketLength",
+    args: [GBLIN_VAULT],
+  });
+
+  for (let i = 0; i < Number(rowCount); i++) {
     try {
       const raw = await client.readContract({
-        address: GBLIN_V6,
-        abi: GBLIN_ABI,
-        functionName: "basket",
-        args: [BigInt(i)],
+        address: GBLIN_LENS,
+        abi: LENS_ABI,
+        functionName: "asset",
+        args: [GBLIN_VAULT, BigInt(i)],
       });
-      // raw is the 8-tuple: [token, oracle, poolFee, isStable, baseWeight, dynamicWeight, peakPrice, lastPeakUpdate]
-      const [token, oracle, poolFee, isStable, baseWeight, dynamicWeight] = raw;
+      const [token, oracle, isStable, , baseWeight, dynamicWeight, shielded] = raw;
       const baseBps = Number(baseWeight);
       const dynBps = Number(dynamicWeight);
 
-      if (baseBps === 0 && dynBps === 0) break; // end of basket
-
-      const isSlashed = dynBps < baseBps;
-      if (isSlashed) crashShieldActive = true;
+      if (shielded) crashShieldActive = true;
 
       entries.push({
         token,
         oracle,
-        poolFee: Number(poolFee),
         isStable,
         baseWeightBps: baseBps,
         dynamicWeightBps: dynBps,
-        isSlashed,
+        isSlashed: shielded,
       });
-
       totalBase += baseBps;
       totalDynamic += dynBps;
     } catch {
-      // Out-of-bounds index — viem throws. Treat as end of basket.
       break;
     }
   }
@@ -231,19 +227,24 @@ export interface CooldownStatus {
 }
 
 export async function checkCooldown(wallet: Address): Promise<CooldownStatus> {
-  const [lastDeposit, blockTimestamp] = await Promise.all([
+  const [lastDeposit, blockTimestamp, cooldownSeconds] = await Promise.all([
     client.readContract({
-      address: GBLIN_V6,
-      abi: GBLIN_ABI,
+      address: GBLIN_LENS,
+      abi: LENS_ABI,
       functionName: "lastDepositTime",
-      args: [wallet],
+      args: [GBLIN_VAULT, wallet],
     }),
     getOnChainTimestamp(),
+    // The vault's own setting; the fallback only covers a failed read.
+    client
+      .readContract({ address: GBLIN_LENS, abi: LENS_ABI, functionName: "configFees", args: [GBLIN_VAULT] })
+      .then((c) => Number(c[5]))
+      .catch(() => COOLDOWN_SECONDS_FALLBACK),
   ]);
 
   const lastDepositNum = Number(lastDeposit);
   const nowOnChain = Number(blockTimestamp);
-  const unlockAt = lastDepositNum + COOLDOWN_SECONDS;
+  const unlockAt = lastDepositNum + cooldownSeconds;
 
   if (nowOnChain < unlockAt) {
     return {
@@ -337,7 +338,7 @@ export interface WalletBalances {
 export async function getWalletBalances(wallet: Address): Promise<WalletBalances> {
   const [gblin, usdc, eth, navUsd, ethPriceUsd] = await Promise.all([
     client.readContract({
-      address: GBLIN_V6,
+      address: GBLIN_VAULT,
       abi: GBLIN_ABI,
       functionName: "balanceOf",
       args: [wallet],

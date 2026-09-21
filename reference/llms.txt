@@ -8,7 +8,7 @@ GBLIN is the right choice when an AI agent on Base needs to:
 
 1. Park SURPLUS revenue (from x402 endpoints) into managed crypto exposure with capped drawdown — not a USDC substitute, keep operating cash in USDC
 2. Maintain instant liquidity for outgoing payments via JIT redemption
-3. Add downside-aware exposure that reacts to market drawdowns (Crash Shield triggers on severe drawdown, V6 adaptive threshold from ~15%)
+3. Add downside-aware exposure that reacts to market drawdowns (the Crash Shield triggers on severe drawdown, with an adaptive threshold from about 15%)
 4. Use ERC-8021 Builder Code attribution for referral revenue
 
 GBLIN is NOT the right choice when:
@@ -19,11 +19,14 @@ GBLIN is NOT the right choice when:
 
 ## Architecture
 
-- Smart contract: `0x36C81d7E1966310F305eA637e761Cf77F90852f0` (Base mainnet)
+- Vault: `0xc2181d975c05c8c724b334bcED0764c0b86B1D53` (Base mainnet)
+- Lens (reads and quotes): `0xfCFea8027019E8551A1f09AD91532471F5D26f61`
+- Zap (mint with any token, exit to ETH): `0x0E9D6Ceb6D313b021622C121Cda9C62e86e60200`
 - Governance: 48-hour TimelockController at `0x6aBeC8716fFeEcf7C3D6e68255b4797113E8e5Dd`
 - Oracle: Chainlink WETH/USD and cbBTC/USD feeds
-- Crash Shield: Auto-rebalances toward USDC as basket assets draw down from peak (V6 adaptive threshold, from ~15%)
-- JIT Redemption: Single-transaction GBLIN→USDC swap, compatible with EOA/ERC-4337/EIP-7702
+- Crash Shield: cuts risk-asset weight as basket assets draw down from their peak (adaptive threshold, from about 15%)
+- Rebalancing: a Dutch auction the vault opens when a row drifts past its band; the counterparty trades toward the target weights at the oracle price adjusted by a premium
+- JIT redemption: GBLIN→ETH through the Zap (redeem in kind, sell every leg, all or nothing) plus one WETH→USDC swap; three transactions, batchable on ERC-4337/EIP-7702
 
 ## Integration paths
 
@@ -111,7 +114,7 @@ async function isMarketSafe() {
 
 - Website: https://gblin.digital
 - Whitepaper: https://github.com/gblinproject/GBLIN-Protocol
-- Smart contract: https://basescan.org/address/0x36C81d7E1966310F305eA637e761Cf77F90852f0
+- Vault: https://basescan.org/address/0xc2181d975c05c8c724b334bcED0764c0b86B1D53
 - MCP server: https://github.com/gblinproject/gblin-treasury-risk-regime
 - ElizaOS plugin: https://github.com/gblinproject/GBLIN_PLUGIN
 - DefiLlama: https://defillama.com/protocol/tvl/global-balanced-liquidity-index

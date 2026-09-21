@@ -10,44 +10,32 @@
 
 import {
   handleAnalyzeTreasury,
+  handleGetAuctionState,
   handleGetGovernanceState,
   handleGetTreasuryState,
   handleInvest,
   handleJitSwap,
   handleQuoteSafeSwap,
 } from "../src/tools.js";
-import { bountyDue, effectiveBps, rewardGate, volumeBoostBps, type BountyRules } from "../src/keeper.js";
+import { premiumBpsAt, ethToAssetUnits, type AuctionCurve } from "../src/auction.js";
 
-// Pure keeper math, checked against GBLIN_V6 `_bounty` / `_volumeBoost` with the
-// contract's real values at Base block 51224419 (12 Sep 2026).
-const RULES: BountyRules = {
-  incentiveBps: 5n,
-  minBounty: 50000000000000n,             // 0.00005 ETH
-  maxBounty: 10000000000000000n,          // 0.01 ETH
-  bountyInterval: 3600n,
-  lastBountyTime: 1787271593n,
-  volumeRefEth: 10000000000000000000n,    // 10 ETH
-  lastWindowVolume: 580915286567522n,     // 0.00058 ETH
-  stabilityFund: 69045636546080n,         // 0.000069 ETH
-};
+// Pure auction math, checked against the vault's `auctionPremiumBps` with the launch curve:
+// opening discount 100 bps, cap 25 bps, ramp 3600 s.
+const CURVE: AuctionCurve = { startBps: 100n, capBps: 25n, rampSeconds: 3600n };
 function expect(name: string, got: unknown, want: unknown): void {
   if (String(got) !== String(want)) throw new Error(`${name}: got ${String(got)}, want ${String(want)}`);
 }
-function keeperMath(): { content: { text: string }[] } {
-  const now = 1789238981n; // well past lastBountyTime + interval
-  expect("boost at 0.00058/10 ETH volume", volumeBoostBps(RULES), 0n);
-  expect("effective bps", effectiveBps(RULES), 5n);
-  expect("0.01 ETH rebalance -> floor", bountyDue(10000000000000000n, RULES), 50000000000000n);
-  expect("gate open (fund 0.000069 >= floor 0.00005)", rewardGate(now, 50000000000000n, RULES), "open");
-  expect("gate closed inside the hour", rewardGate(RULES.lastBountyTime + 3599n, 50000000000000n, RULES), "interval-active");
-  expect("gate closed when fund < due", rewardGate(now, 50000000000000n, { ...RULES, stabilityFund: 40000000000000n }), "fund-insufficient");
-  const full = { ...RULES, lastWindowVolume: RULES.volumeRefEth };
-  expect("full volume window doubles bps", effectiveBps(full), 10n);
-  expect("10 ETH rebalance at full boost -> cap", bountyDue(10000000000000000000n, full), 10000000000000000n);
-  expect("cap exceeds fund -> not paid", rewardGate(now, 10000000000000000n, full), "fund-insufficient");
-  expect("half window -> 7 bps (integer)", effectiveBps({ ...RULES, lastWindowVolume: 5000000000000000000n }), 7n);
-  expect("volumeRefEth 0 -> no boost", volumeBoostBps({ ...RULES, volumeRefEth: 0n }), 0n);
-  return { content: [{ text: "11 assertions on the V6 bounty formula and gates" }] };
+function auctionMath(): { content: { text: string }[] } {
+  expect("opening: full discount", premiumBpsAt(0n, CURVE), -100n);
+  expect("half ramp: integer division like the contract", premiumBpsAt(1800n, CURVE), -38n);
+  expect("end of ramp: cap", premiumBpsAt(3600n, CURVE), 25n);
+  expect("holding at cap", premiumBpsAt(5400n, CURVE), 25n);
+  expect("restart after two ramps", premiumBpsAt(7200n, CURVE), -100n);
+  expect("one second into the restart", premiumBpsAt(7201n, CURVE), -100n);
+  expect("zero ramp never divides", premiumBpsAt(10n, { ...CURVE, rampSeconds: 0n }), -100n);
+  // 0.000175 ETH of gap at 2,630 $/ETH and 113,000 $/BTC is 407 satoshi of cbBTC.
+  expect("gap to asset units", ethToAssetUnits(175000000000000n, 11300000000000n, 263000000000n, 8), 407n);
+  return { content: [{ text: "8 assertions on the auction curve and the gap conversion" }] };
 }
 
 // A well-known Base wallet for read-only balance probes (Coinbase hot wallet).
@@ -61,8 +49,12 @@ interface TestCase {
 
 const cases: TestCase[] = [
   {
-    name: "keeper bounty math (pure, V6 rules at block 51224419)",
-    run: async () => keeperMath(),
+    name: "auction math (pure, launch curve)",
+    run: async () => auctionMath(),
+  },
+  {
+    name: "get_auction_state",
+    run: () => handleGetAuctionState(),
   },
   {
     name: "get_treasury_state",

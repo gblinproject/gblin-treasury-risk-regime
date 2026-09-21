@@ -14,11 +14,10 @@ MCP_DISABLED = "false"
 binding = "COHERENCE"
 id = "7234cbebc57b4312885f1d4365b45173"
 
-# Contatore della superficie gratuita (dal 02/09/2026). Sta in D1, NON in KV, apposta:
-# il tetto free di D1 e' 100.000 righe scritte al giorno contro le 1.000 di KV, ed e' una
-# QUOTA SEPARATA — cosi' il contatore non puo' piu' mettere in pericolo i sigilli giornalieri
-# delle promesse, che vivono su KV. In piu' l'UPSERT di D1 e' atomico, quindi spariscono le
-# perdite da scrittura concorrente che avevamo dichiarato con KV.
+# Free-surface counter. It lives in D1 rather than KV on purpose: the D1 free allowance is
+# 100,000 row writes per day against 1,000 for KV, and it is a SEPARATE quota, so the counter
+# cannot put the daily promise seals at risk. D1's UPSERT is also atomic, which removes the
+# lost updates a concurrent key-value write can produce.
 [[d1_databases]]
 binding = "USAGE"
 database_name = "gblin-usage"
