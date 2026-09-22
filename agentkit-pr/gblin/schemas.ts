@@ -44,4 +44,4 @@ export const SellGblinForEthSchema = z
 export const GetTreasuryStateSchema = z
   .object({})
   .strip()
-  .describe("Read live GBLIN treasury state (NAV, supply, Crash Shield status)");
+  .describe("Read live GBLIN state (ETH value per share, supply, NAV reliability)");

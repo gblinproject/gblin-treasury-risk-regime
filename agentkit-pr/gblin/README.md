@@ -1,23 +1,26 @@
 # GBLIN Action Provider
 
-Actions for interacting with [GBLIN](https://gblin.digital), a collateral-backed,
-self-defending treasury index on Base (WETH / cbBTC / USDC) with an autonomous
-on-chain "Crash Shield" that reduces risk during drawdowns. It is intended for
-parking surplus agent capital with capped drawdown — managed crypto exposure,
-**not** a stablecoin and not financial advice.
+Actions for interacting with [GBLIN](https://gblin.digital), a collateral-backed treasury index
+on Base (cbBTC / WETH / USDC). The vault mints at NAV, redeems pro rata in kind and reduces the
+weight of a basket asset on-chain when it draws down. It is intended for parking surplus agent
+capital in managed crypto exposure — **not** a stablecoin and not financial advice.
 
-Contract (verified): [`0x36C81d7E1966310F305eA637e761Cf77F90852f0`](https://basescan.org/address/0x36C81d7E1966310F305eA637e761Cf77F90852f0#code)
+| Contract | Address |
+| --- | --- |
+| Vault (share token) | [`0xc2181d975c05c8c724b334bcED0764c0b86B1D53`](https://basescan.org/address/0xc2181d975c05c8c724b334bcED0764c0b86B1D53#code) |
+| Lens (quotes) | [`0xfCFea8027019E8551A1f09AD91532471F5D26f61`](https://basescan.org/address/0xfCFea8027019E8551A1f09AD91532471F5D26f61#code) |
+| Zap (exit to ETH) | [`0x0E9D6Ceb6D313b021622C121Cda9C62e86e60200`](https://basescan.org/address/0x0E9D6Ceb6D313b021622C121Cda9C62e86e60200#code) |
 
 ## Actions
 
 | Action | Description |
 | --- | --- |
-| `buy_gblin` | Buy GBLIN with ETH. Reads `quoteBuyGBLIN` on-chain and submits `buyGBLIN` with a slippage-bounded minimum output. |
-| `sell_gblin_for_eth` | Redeem GBLIN back to ETH (e.g. to fund an x402 payment). Reads `quoteSellGBLIN` and submits `sellGBLINForEth` with a min-out. |
-| `get_gblin_state` | Read per-GBLIN ETH redemption value and total supply. |
+| `buy_gblin` | Buy GBLIN with ETH. Reads `quoteBuy` from the Lens and calls `buyGBLIN` on the vault with a slippage-bounded minimum output. |
+| `sell_gblin_for_eth` | Redeem GBLIN back to ETH (e.g. to fund an x402 payment). Reads `quoteSell` from the Lens, approves the shares to the Zap if needed, and calls `GBLINZap.sellGBLINForEth`, which redeems in kind and sells every leg, all or nothing. |
+| `get_gblin_state` | Read the ETH value of one GBLIN at NAV, the total supply, and whether the vault reports its NAV as reliable. |
 
-Every state-changing action derives its minimum output from the contract's own
-quote function, so the agent is never exposed to an unbounded swap.
+Every state-changing action derives its minimum output from an on-chain quote, and both
+refuse to trade while the vault reports its NAV as not reliable.
 
 ## Network support
 
@@ -33,6 +36,6 @@ const provider = gblinActionProvider();
 
 ## Notes
 
-- GBLIN enforces a short post-purchase cooldown before redemption.
-- The risk policy is public code governed by a 48h timelock, and has executed
-  autonomously on mainnet ([activation tx](https://basescan.org/tx/0x896be221989930776972c78f81e2be9081c90d0027c14f7cd74bf51b9ad0acca)).
+- Fees: 0.10% on mint and a 0.50% yearly management fee accrued as new shares; redemption pays no protocol fee.
+- The vault enforces a 20-second redemption cooldown after a mint for oneself.
+- The vault is owned by a 48-hour timelock; its parameters can change through it.
