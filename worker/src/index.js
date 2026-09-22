@@ -1062,7 +1062,7 @@ const SURFACE_META = {
   tool_count: 8,
   paid_over_mcp: false,
   sibling_package: {
-    name: "@gblin-protocol/mcp-server", version: "0.4.1", transport: "stdio (npm)", tool_count: 13,
+    name: "@gblin-protocol/mcp-server", version: "0.4.2", transport: "stdio (npm)", tool_count: 13,
     note: "Different, larger tool set: the 10 treasury/governance tools (get_treasury_state, quote_safe_swap, swap_gblin_to_usdc_jit, invest_usdc_to_gblin, analyze_treasury_health, get_governance_state, share_skill_with_peer, get_auction_state, get_market_risk_regime, verify_risk_attestation) plus the 3 receipt tools. Transactions there go through the GBLIN Zap and need a signer the operator configures.",
   },
   resources: ["gblin://howto/attestation", "gblin://howto/seal", "gblin://limits", "gblin://keys"],

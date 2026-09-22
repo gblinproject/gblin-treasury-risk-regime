@@ -266,7 +266,7 @@ export async function checkCooldown(wallet: Address): Promise<CooldownStatus> {
  * the dynamic slippage buffer baked in (so the call won't revert).
  *
  * Approach (no Quoter dependency in v0.1):
- *   1. usdcTarget × buffer = grossUsdcTarget
+ *   1. usdcTarget × buffer² = grossUsdcTarget (one buffer for the Zap exit, one for the swap)
  *   2. grossUsdcTarget / navUsd = gblinToSell
  *
  * The buffer absorbs both protocol internal slippage and Uniswap WETH→USDC.
@@ -287,8 +287,11 @@ export async function quoteGblinForUsdc(
 
   // Gross-up the target by the slippage buffer so we sell enough GBLIN.
   // grossTarget = target * 10000 / (10000 - bps)
+  // The buffer is applied twice downstream: once to the Zap exit's minimum ETH, once to the WETH->USDC
+  // swap, which spends only that minimum and must still return the full target. Gross up for both.
+  const keep = BPS_DENOMINATOR - slippage.bps;
   const grossUsdcTarget =
-    (usdcTargetUnits * BPS_DENOMINATOR) / (BPS_DENOMINATOR - slippage.bps);
+    (usdcTargetUnits * BPS_DENOMINATOR * BPS_DENOMINATOR) / (keep * keep);
 
   // Convert USDC (6 dec) → GBLIN (18 dec) using NAV.
   // gblin = (grossUsdc / 1e6) / navUsd  →  scale to 18-dec wei

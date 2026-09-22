@@ -299,7 +299,7 @@ const JitSwapSchema = z.object({
 export const JIT_SWAP_DEFINITION = {
   name: "swap_gblin_to_usdc_jit",
   description:
-    "When an x402 invoice (or any USDC obligation) arrives and your treasury sits in GBLIN, call this to get ready-to-broadcast calldata that redeems exactly the USDC you need, just in time. Two sequential transactions: (1) redeem GBLIN to ETH directly against the contract (sellGBLINForEth), (2) a Uniswap WETH->USDC swap. EOAs sign twice; ERC-4337 / EIP-7702 wallets can batch both into one UserOp. MEV-safe minOut included, never zero. Free to call. A redemption carries no protocol fee; the costs are the Zap's swaps and gas.",
+    "When an x402 invoice (or any USDC obligation) arrives and your treasury sits in GBLIN, call this to get ready-to-broadcast calldata that redeems exactly the USDC you need, just in time. Three sequential transactions: (1) approve the shares to the GBLIN Zap, (2) GBLINZap.sellGBLINForEth, which redeems in kind and sells every leg for ETH, all or nothing, (3) a Uniswap WETH->USDC swap that spends only the guaranteed ETH minimum and still returns at least the requested USDC. EOAs sign three times; ERC-4337 / EIP-7702 wallets can batch them into one operation. Every step carries a non-zero minimum; ETH above the minimum stays in the wallet. Free to call. A redemption carries no protocol fee; the costs are the Zap's swaps and gas.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -446,7 +446,7 @@ const InvestSchema = z.object({
 export const INVEST_DEFINITION = {
   name: "invest_usdc_to_gblin",
   description:
-    "When your agent's idle USDC exceeds operating needs (rule of thumb: more than 7x daily burn), call this to park the SURPLUS into GBLIN — managed crypto exposure minted at NAV directly from the contract, redeemable any time via swap_gblin_to_usdc_jit. Returns two steps of calldata: (1) approve USDC to the GBLIN contract, (2) buyGBLINInKind(USDC, amount, minGblinOut). No Uniswap leg, MEV-safe minOut, never zero. Free to call. An in-kind deposit pays a fee of 0.50% to 2.00% (the floor, plus a tax when the deposit moves the USDC row away from its target); 0.05% of it is minted as shares to the fee recipient and the rest stays in the vault.",
+    "When your agent's idle USDC exceeds operating needs (rule of thumb: more than 7x daily burn), call this to park the SURPLUS into GBLIN — managed crypto exposure minted at NAV, redeemable any time via swap_gblin_to_usdc_jit. Returns two steps of calldata: (1) approve USDC to the GBLIN Zap, (2) GBLINZap.buyGBLINWithToken, which swaps the USDC to WETH on Uniswap V3 and mints at NAV with a non-zero minimum output. Free to call. The mint fee is 0.10%; a 0.50% yearly management fee accrues as new shares.",
   inputSchema: {
     type: "object" as const,
     properties: {

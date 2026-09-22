@@ -3,6 +3,14 @@
 All notable changes to `@gblin-protocol/mcp-server` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.4.2] — 2026-09-22
+
+### Fixed
+- `swap_gblin_to_usdc_jit` sold too little GBLIN: the slippage buffer was applied twice downstream (to the
+  Zap exit's minimum ETH and to the swap) but the sell amount was grossed up once, so the final swap spent the
+  minimum ETH and could not return the requested USDC and reverted. The sell amount is now grossed up for both.
+- The descriptions of `swap_gblin_to_usdc_jit` and `invest_usdc_to_gblin` state the steps they actually return.
+
 ## [0.4.1] — 2026-09-22
 
 ### Fixed
