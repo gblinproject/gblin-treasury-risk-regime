@@ -3,7 +3,7 @@
 All notable changes to `@gblin-protocol/mcp-server` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.1] — 2026-09-22
 
 ### Fixed
 - The JIT redemption returns a `gas_hint` of 1,100,000 for the Zap exit step (it was 600,000, below what the
