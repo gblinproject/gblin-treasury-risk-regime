@@ -111,7 +111,7 @@ function planTreasuryLayers(totalUsdc: number, monthlyOutflowUsdc: number): Trea
 
 1. **Auto-rebalancing too frequently.** Gas costs compound. Rebalance only when drift exceeds 10% of target allocation, or on a daily/weekly schedule for small agents.
 
-2. **Ignoring withdrawal cooldowns.** GBLIN has a 2-minute cooldown after deposit before withdrawal is allowed. Plan around this.
+2. **Ignoring withdrawal cooldowns.** GBLIN has a short redemption cooldown after a mint for oneself (20 seconds, read live). Plan around it.
 
 3. **Treating treasury growth as guaranteed.** GBLIN NAV CAN decrease if the basket assets (cbBTC, WETH) drop in market price. The Crash Shield mitigates extreme drops but does not prevent moderate ones.
 

@@ -119,7 +119,7 @@ export async function rebalance(walletAddress: `0x${string}`, usdcBalance: numbe
 
 1. **Pricing too low**: $0.001 per call seems agent-friendly but rarely covers gas + LLM costs. Start at $0.01-$0.05.
 
-2. **No cooldown logic**: GBLIN has a 2-minute cooldown after deposit before withdrawal. If revenue arrives faster than cooldown, you cannot redeem during peak demand. Hold a USDC operational buffer.
+2. **No cooldown logic**: GBLIN has a short redemption cooldown after a mint for oneself (20 seconds, read live). A sale right after a mint reverts. Hold a USDC operational buffer.
 
 3. **Hardcoding the treasury floor**: As the agent grows, the floor should grow too. Make it a function of recent outflow patterns.
 

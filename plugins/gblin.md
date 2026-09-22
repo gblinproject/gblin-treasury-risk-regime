@@ -208,7 +208,7 @@ For multi-step flows (approve + buy), include both calls in the same `send_calls
 | Rule | Detail |
 |------|--------|
 | **Always quote first** | Call `quote_safe_swap` before any prepare tool. Never skip slippage check. |
-| **Cooldown enforced onchain** | Selling within 2 min of buying will revert. Surface this to the user proactively. |
+| **Cooldown enforced onchain** | Selling within the redemption cooldown after a mint for oneself (20 seconds, read live) reverts. Surface this to the user proactively. |
 | **Min deposit** | None. Any amount mints; below a few dollars the gas exceeds the value moved. |
 | **Fee disclosure** | 0.10% on every mint with ETH or WETH: 0.05% stays in the vault and lifts the NAV, 0.05% is minted as shares to the fee recipient. A 0.50% yearly management fee accrues as shares. Redemption in kind and transfers are fee-free. |
 | **Crash Shield** | If `crash_shield_active: true`, USDC weight increases automatically; inform the user before they buy. |

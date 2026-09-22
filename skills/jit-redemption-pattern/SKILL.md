@@ -92,15 +92,16 @@ async function payInvoiceWithGblin(params: {
 
 ## Handling the cooldown
 
-GBLIN enforces a 2-minute cooldown between deposit and redemption to prevent flash-loan exploits. Plan around this:
+The vault enforces a short redemption cooldown after a mint for oneself (20 seconds at launch; a governance parameter, read live through `GBLINLens.configFees`). Plan around it:
 
 ```typescript
 async function safeRedeem(walletAddress: string, amount: number) {
-  const health = await fetch(`https://gblin.digital/api/x402/health?wallet=${walletAddress}`);
-  const status = await health.json();
+  // /api/x402/health is an x402 endpoint: call it with an x402 client such as @x402/fetch.
+  const health = await fetchWithPayment(`https://gblin.digital/api/x402/health?wallet=${walletAddress}`);
+  const { cooldown } = await health.json();
 
-  if (status.cooldownActive) {
-    const waitMs = (status.cooldownRemainingSeconds || 120) * 1000;
+  if (cooldown.active) {
+    const waitMs = cooldown.seconds_remaining * 1000;
     return { needsWait: true, waitMs, retryAt: Date.now() + waitMs };
   }
   return { needsWait: false };

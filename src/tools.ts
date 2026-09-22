@@ -426,7 +426,8 @@ export async function handleJitSwap(args: unknown) {
         eip7702: true,
         note: "Three steps: approve, the Zap exit, the WETH->USDC swap. EOAs sign three times; ERC-4337 / EIP-7702 wallets can batch all of them into one UserOp.",
       },
-      gas_hint: 600_000,
+      gas_hint: 1_100_000,
+      gas_hint_note: "Gas limit for the Zap exit step: it uses about 810,000 and forwards gas-capped transfers, so a tight limit reverts.",
     });
   } catch (err) {
     return toolError((err as Error).message);

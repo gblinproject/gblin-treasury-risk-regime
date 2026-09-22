@@ -3,6 +3,14 @@
 All notable changes to `@gblin-protocol/mcp-server` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- The JIT redemption returns a `gas_hint` of 1,100,000 for the Zap exit step (it was 600,000, below what the
+  exit needs), with a note explaining why.
+- Skills and the Base MCP plugin page state the vault's redemption cooldown (20 seconds after a mint for
+  oneself, read live) instead of two minutes; the JIT skill reads the real `health` response fields.
+
 ## [0.4.0] — 2026-09-21
 
 The package now targets the vault in service, `0xc2181d975c05c8c724b334bcED0764c0b86B1D53`, with its Lens
