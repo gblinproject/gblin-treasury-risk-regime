@@ -45,16 +45,33 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: TOOL_DEFINITIONS,
 }));
 
+/**
+ * Tools that existed in earlier releases and no longer do. A caller that integrated against
+ * an older version is told what to call instead, rather than only that the name is unknown.
+ */
+const RETIRED_TOOLS: Record<string, { use: string; why: string }> = {
+  find_keeper_bounty: {
+    use: "get_auction_state",
+    why: "The vault in service rebalances through a Dutch auction and pays no keeper bounty; get_auction_state reports whether the auction is open, the premium and the gap per basket row.",
+  },
+};
+
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   const handler = TOOL_HANDLERS[name];
   if (!handler) {
+    // A caller that integrated before a rename gets the replacement, not a dead end.
+    const replacement = RETIRED_TOOLS[name];
     return {
       isError: true,
       content: [
         {
           type: "text" as const,
-          text: JSON.stringify({ error: `Unknown tool: ${name}` }),
+          text: JSON.stringify(
+            replacement
+              ? { error: `Unknown tool: ${name}`, retired: true, use_instead: replacement.use, reason: replacement.why }
+              : { error: `Unknown tool: ${name}`, available: Object.keys(TOOL_HANDLERS) }
+          ),
         },
       ],
     };
