@@ -299,7 +299,7 @@ const JitSwapSchema = z.object({
 export const JIT_SWAP_DEFINITION = {
   name: "swap_gblin_to_usdc_jit",
   description:
-    "When an x402 invoice (or any USDC obligation) arrives and your treasury sits in GBLIN, call this to get ready-to-broadcast calldata that redeems exactly the USDC you need, just in time. Two sequential transactions: (1) redeem GBLIN to ETH directly against the contract (sellGBLINForEth), (2) a Uniswap WETH->USDC swap. EOAs sign twice; ERC-4337 / EIP-7702 wallets can batch both into one UserOp. MEV-safe minOut included, never zero. Free to call — revenue is captured on-chain via the 0.05% founder fee on every swap.",
+    "When an x402 invoice (or any USDC obligation) arrives and your treasury sits in GBLIN, call this to get ready-to-broadcast calldata that redeems exactly the USDC you need, just in time. Two sequential transactions: (1) redeem GBLIN to ETH directly against the contract (sellGBLINForEth), (2) a Uniswap WETH->USDC swap. EOAs sign twice; ERC-4337 / EIP-7702 wallets can batch both into one UserOp. MEV-safe minOut included, never zero. Free to call. A redemption carries no protocol fee; the costs are the Zap's swaps and gas.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -445,7 +445,7 @@ const InvestSchema = z.object({
 export const INVEST_DEFINITION = {
   name: "invest_usdc_to_gblin",
   description:
-    "When your agent's idle USDC exceeds operating needs (rule of thumb: more than 7x daily burn), call this to park the SURPLUS into GBLIN — managed crypto exposure minted at NAV directly from the contract, redeemable any time via swap_gblin_to_usdc_jit. Returns two steps of calldata: (1) approve USDC to the GBLIN contract, (2) buyGBLINInKind(USDC, amount, minGblinOut). No Uniswap leg, MEV-safe minOut, never zero. Free to call - revenue is captured on-chain via the 0.05% founder fee on every buy.",
+    "When your agent's idle USDC exceeds operating needs (rule of thumb: more than 7x daily burn), call this to park the SURPLUS into GBLIN — managed crypto exposure minted at NAV directly from the contract, redeemable any time via swap_gblin_to_usdc_jit. Returns two steps of calldata: (1) approve USDC to the GBLIN contract, (2) buyGBLINInKind(USDC, amount, minGblinOut). No Uniswap leg, MEV-safe minOut, never zero. Free to call. An in-kind deposit pays a fee of 0.50% to 2.00% (the floor, plus a tax when the deposit moves the USDC row away from its target); 0.05% of it is minted as shares to the fee recipient and the rest stays in the vault.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -730,7 +730,7 @@ export async function handleGetGovernanceState(args: unknown) {
 
   try {
     // 1. Owner, pending owner and fee recipient of the vault.
-    const [owner, pendingOwner, founder] = await Promise.all([
+    const [owner, pendingOwner, feeRecipient] = await Promise.all([
       client.readContract({
         address: GBLIN_VAULT,
         abi: GBLIN_ABI,
@@ -795,10 +795,10 @@ export async function handleGetGovernanceState(args: unknown) {
       // OZ TimelockController v5 uses AccessControl (not AccessControlEnumerable),
       // so getRoleMemberCount is unavailable. Use hasRole on known addresses instead.
       const ZERO = "0x0000000000000000000000000000000000000000" as const;
-      const founderAddr = founder;
+      const feeRecipientAddr = feeRecipient;
 
       const [
-        founderIsProposer,
+        feeRecipientIsProposer,
         guardianIsCanceller,
         timelockIsSelfAdmin,
         executorOpen,
@@ -807,7 +807,7 @@ export async function handleGetGovernanceState(args: unknown) {
           address: GBLIN_TIMELOCK,
           abi: TIMELOCK_ABI,
           functionName: "hasRole",
-          args: [proposerRole, founderAddr],
+          args: [proposerRole, feeRecipientAddr],
         }),
         // Guardian multisig should hold CANCELLER_ROLE (veto power)
         client.readContract({
@@ -839,7 +839,7 @@ export async function handleGetGovernanceState(args: unknown) {
         min_delay_matches_expected: minDelay === EXPECTED_MIN_DELAY_SECONDS,
         expected_min_delay_seconds: Number(EXPECTED_MIN_DELAY_SECONDS),
         roles: {
-          fee_recipient_is_proposer: founderIsProposer,
+          fee_recipient_is_proposer: feeRecipientIsProposer,
           guardian_is_canceller: guardianIsCanceller,
           timelock_is_self_admin: timelockIsSelfAdmin,
           executor_open_to_anyone: executorOpen,
@@ -965,7 +965,7 @@ export async function handleGetGovernanceState(args: unknown) {
       owner: ownerNorm,
       owner_is_timelock: ownerIsTimelock,
       owner_is_renounced: ownerIsRenounced,
-      fee_recipient: getAddress(founder),
+      fee_recipient: getAddress(feeRecipient),
       trust_summary: ownerIsRenounced
         ? "Ownership fully renounced — no admin can touch the contract."
         : ownerIsTimelock

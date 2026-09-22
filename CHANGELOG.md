@@ -34,6 +34,10 @@ supports payments by signature (EIP-3009).
 - `find_keeper_bounty`: the vault in service has no bounty fund; `get_auction_state` replaces it.
 - The `earn-as-base-keeper` skill now describes the auction.
 
+### Fixed
+- The descriptions of `swap_gblin_to_usdc_jit` and `invest_usdc_to_gblin` stated a 0.05% fee on every call.
+  On the vault in service a redemption carries no protocol fee, and an in-kind deposit pays 0.50% to 2.00%.
+
 ## [0.3.2] and earlier
 
 Releases for the previous deployment. See the npm history.
