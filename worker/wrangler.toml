@@ -23,6 +23,6 @@ binding = "USAGE"
 database_name = "gblin-usage"
 database_id = "befd24a6-1f21-4cc6-ab54-70e954a8d0dc"
 
-# Il battito dell'automa: osserva ogni 10 minuti
+# Every 10 minutes: promise observation and daily seals. Every minute: the auction order relay.
 [triggers]
-crons = ["*/10 * * * *"]
+crons = ["*/10 * * * *", "* * * * *"]

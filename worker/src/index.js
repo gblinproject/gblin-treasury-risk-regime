@@ -26,6 +26,7 @@
 
 import { catalogTick, catalogReport, catalogFull, observatoryPage, observatoryJson, observatoryBadge } from "./catalog.mjs";
 import { vmWatchDue, vmWatchTick, vmWatchTest } from "./vmwatch.mjs";
+import { publishAuctionOrders, publisherStatus } from "./auctionpublisher.mjs";
 // Witness (./witness.mjs): cosigns the checkpoints of third-party transparency
 // logs (C2SP tlog-cosignature v1). Cost is one read plus one signature per tick,
 // with no chain access at all. Without the WITNESS_KEY secret the feature stays
@@ -52,7 +53,7 @@ const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // Bumped on EVERY deploy. The authoritative identifier of the surface remains
 // manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.11.0" };
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.12.1" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -1792,6 +1793,10 @@ export default {
       const r = await witnessAddCheckpoint(env, bodyText);
       return new Response(r.body, { status: r.status, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
     }
+    if (url.pathname === "/auction/publisher" && request.method === "GET") {
+      const rpcs = env.GBLIN_RPC_URL ? [env.GBLIN_RPC_URL, ...FALLBACK_RPCS] : FALLBACK_RPCS;
+      return json(await publisherStatus(rpcs), 200, { "cache-control": "public, max-age=30" });
+    }
     if (url.pathname === "/witness" && request.method === "GET") {
       return json(await witnessIndex(env), 200, { "cache-control": "public, max-age=60" });
     }
@@ -1890,7 +1895,14 @@ export default {
   // Cron: the automaton's heartbeat. Every 10-minute tick observes every
   // promise once; on the first tick of a new UTC day it also seals the day
   // that just closed as an on-chain attestation (no-op until the key is set).
-  async scheduled(_event, env, ctx) {
+  async scheduled(event, env, ctx) {
+    // Every minute: take the vault's auction orders to the CoW order book. A separate trigger, so it
+    // has its own subrequest budget and never delays the 10-minute work below. It writes nothing.
+    if (event && event.cron === "* * * * *") {
+      const rpcs = env.GBLIN_RPC_URL ? [env.GBLIN_RPC_URL, ...FALLBACK_RPCS] : FALLBACK_RPCS;
+      ctx.waitUntil(publishAuctionOrders(env, rpcs).catch((e) => console.error("auction publisher:", e && e.message)));
+      return;
+    }
     ctx.waitUntil(flushUsageNow(env, true)); // any batch left over on this isolate
     const work = (async () => {
       // Witness: 1-2 subrequests, never competing with the seal's budget.
