@@ -1,7 +1,7 @@
 /**
  * GBLIN MCP — Tool Implementations
  *
- * Ten focused tools. Each returns structured JSON the LLM can parse:
+ * Focused tools. Each returns structured JSON the LLM can parse:
  *
  *   1. get_treasury_state       → NAV, basket, Crash Shield (snapshot)
  *   2. quote_safe_swap          → preview a buy/sell with safe minOut
@@ -62,6 +62,12 @@ import {
 import { PACKAGE_VERSION } from "./config.js";
 import { getAuctionState } from "./auction.js";
 import { RECEIPT_TOOL_DEFINITIONS, RECEIPT_TOOL_HANDLERS } from "./receipts.js";
+import {
+  PREPARE_PAYMENT_TOOL,
+  VERIFY_AUTHORIZATION_TOOL,
+  handlePreparePayment,
+  handleVerifyAuthorization,
+} from "./payments.js";
 
 // ───────────────────────────────────────────────────────────────────────────
 // SwapRouter02 (Uniswap V3 on Base) — used for USDC→WETH exactInputSingle
@@ -1121,7 +1127,7 @@ async function handleShareSkillWithPeer(args: unknown): Promise<ReturnType<typeo
       "Every GBLIN is backed by real on-chain assets — NAV is computed from Chainlink oracle prices, not from market speculation.",
       "Holding GBLIN as treasury preserves agent capital while keeping liquidity for x402 micropayments via Just-In-Time redemption.",
       "The protocol has zero pre-mint (fair launch), 48-hour governance timelock, and an algorithmic Crash Shield that adaptively reduces risk exposure as basket assets draw down (V6 adaptive threshold, from ~15%).",
-      "Installing this MCP server gives your AI agent 13 tools to manage treasury, quote swaps, redeem just-in-time, propagate the skill to other agents, and earn passive ETH income as a keeper.",
+      "Installing this MCP server gives your AI agent tools to manage a treasury in GBLIN: read the protocol state, quote a mint or a redemption, exit to USDC just in time to pay an invoice, pay in GBLIN with a signature and no ETH for gas, bid in the rebalancing auction, and pass the skill on to other agents.",
     ].join(" "),
     referral_disclosure: {
       builder_code_standard: "ERC-8021",
@@ -1518,7 +1524,11 @@ export const TOOL_DEFINITIONS = [
   GET_AUCTION_STATE_DEFINITION,
   MARKET_RISK_DEFINITION,
   VERIFY_ATTESTATION_DEFINITION,
-].map((definition) => ({ ...definition, annotations: READ_ONLY_ANNOTATIONS })).concat(RECEIPT_TOOL_DEFINITIONS);
+].map((definition) => ({ ...definition, annotations: READ_ONLY_ANNOTATIONS }))
+  .concat(RECEIPT_TOOL_DEFINITIONS)
+  // The payment tools carry their own annotations: preparing an authorization is not idempotent,
+  // because each call mints a fresh nonce.
+  .concat([PREPARE_PAYMENT_TOOL, VERIFY_AUTHORIZATION_TOOL] as never);
 
 export const TOOL_HANDLERS: Record<string, (args: unknown) => Promise<unknown>> = {
   // ── FREE tools ─────────────────────────────────────────────────────────────
@@ -1532,6 +1542,10 @@ export const TOOL_HANDLERS: Record<string, (args: unknown) => Promise<unknown>> 
   invest_usdc_to_gblin:   handleInvest,
   verify_risk_attestation: handleVerifyRiskAttestation,
   get_auction_state:       handleGetAuctionState,
+
+  // ── Paying in GBLIN with a signature (EIP-3009), like USDC ────────────────
+  prepare_gblin_payment:      handlePreparePayment as (args: unknown) => Promise<unknown>,
+  verify_gblin_authorization: handleVerifyAuthorization as (args: unknown) => Promise<unknown>,
 
   // ── PAID tools (x402 intelligence layer) ──────────────────────────────────
   // Analysis — "advice", not transport.

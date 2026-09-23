@@ -3,6 +3,33 @@
 All notable changes to `@gblin-protocol/mcp-server` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-09-23
+
+### Added
+- `prepare_gblin_payment` and `verify_gblin_authorization`: paying in GBLIN with a signature and no ETH
+  for gas, through the token's EIP-3009 surface. The first builds the EIP-712 message, the calldata and
+  the x402 "exact" payload, and the accepts block a seller publishes to be paid in GBLIN; the second runs
+  the checks a facilitator runs — signature (ECDSA or ERC-1271), validity window against on-chain time,
+  nonce state, balance — and returns the calldata only when the payment would settle.
+- The EIP-712 domain is read from the token through EIP-5267 rather than assumed, so a redeployment
+  cannot silently invalidate every signature this server prepares.
+- `npm run test:payments`: twenty-six end-to-end checks against a fork of Base, including the failure
+  modes — replay, foreign signature, expired window, insufficient balance, and an outsider trying to
+  carry a `receive` authorization.
+- Tool results now also travel as `structuredContent` for clients that read it.
+
+### Changed
+- The skill seed no longer offers "passive ETH income as a keeper": the vault in service pays no keeper
+  bounty, the auction premium is the whole reward.
+
+## [0.4.3] - 2026-09-23
+
+### Changed
+- A call to a tool that was retired in an earlier release now answers with the tool to call instead and
+  the reason, rather than only that the name is unknown. `find_keeper_bounty`, removed when the vault in
+  service moved to a Dutch auction, points to `get_auction_state`.
+- A call to a name that never existed lists the tools the server does expose.
+
 ## [0.4.2] — 2026-09-22
 
 ### Fixed

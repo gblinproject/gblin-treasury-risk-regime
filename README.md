@@ -101,6 +101,24 @@ A stateless Streamable HTTP server with a smaller tool set runs at `https://gbli
   - Inputs: none
   - The premium is the whole reward; nothing is paid out of the vault. The input is reduced to what closes the gap
 
+- **prepare_gblin_payment**
+  - Builds a gasless GBLIN payment. The share token implements EIP-3009, the same mechanism USDC uses: the holder signs an authorization and anybody can carry it on chain, so the payer needs no ETH. Returns the EIP-712 message to sign, the amount in shares and atomic units, the payer's balance, the x402 "exact" payload for paying an HTTP endpoint in GBLIN, and the accepts block a seller publishes to be paid in GBLIN
+  - Inputs:
+    - `from` (string): the payer, the wallet that will sign
+    - `to` (string): the recipient
+    - `amount_gblin` (string) or `amount_usd` (string): the amount, converted at the live NAV when given in USD
+    - `method` (string, optional): `receive` (default) can be submitted only by the recipient, so nobody can front-run it; `transfer` can be submitted by anyone, which is what an x402 facilitator does
+    - `valid_for_seconds` (number, optional): default 600, maximum 86,400
+  - The EIP-712 domain is read from the token through EIP-5267, never assumed. No private key is requested, held or transmitted
+
+- **verify_gblin_authorization**
+  - Checks a signed authorization against the chain before anyone spends gas on it: recovers the signer from the digest, or asks the wallet itself through ERC-1271 when the payer is a contract, then checks the validity window against on-chain time, whether the nonce has been used or cancelled, and whether the payer still holds the amount. Returns a verdict, the failing reasons, and the ready calldata when it would settle
+  - Inputs:
+    - `authorization` (object): from, to, value, validAfter, validBefore, nonce
+    - `signature` (string): produced by the payer's wallet
+    - `method` (string, optional): `receive` (default) or `transfer`
+  - These are the checks an x402 facilitator runs, so a `would_settle` verdict means the payment is good to carry
+
 - **verify_risk_attestation**
   - Verifies a Risk Attestation offline: recomputes the EIP-712 id, recovers the signer and checks it against the published attestor, checks freshness, and reports the live drift of the regime since issuance
   - Inputs:

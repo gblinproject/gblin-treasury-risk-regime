@@ -63,6 +63,8 @@ Claude Desktop config:
 11. `seal_action_demo` — seal the hashes of an AI action into the public transparency log (demo, 5/day/IP)
 12. `get_receipt` — fetch a sealed receipt with its inclusion proof
 13. `how_to_seal_paid` — how to seal without limits ($0.01 USDC per seal via x402)
+14. `prepare_gblin_payment` — build a gasless GBLIN payment: the EIP-712 message to sign, the calldata that carries it, and the x402 "exact" payload
+15. `verify_gblin_authorization` — check a signed authorization against the chain (signature, window, nonce, balance) before anyone spends gas
 
 Every tool is free. The server never charges: revenue comes from the on-chain
 protocol fee when an agent actually uses GBLIN.

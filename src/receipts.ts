@@ -38,7 +38,7 @@ function receiptError(message: string, hint?: string) {
 async function parseJsonBody(res: Response): Promise<Record<string, unknown> | null> {
   try {
     const v: unknown = await res.json();
-    // il body deve essere un oggetto JSON: 42, "x", [] o null non sono risposte valide
+    // The body must be a JSON object: 42, "x", [] and null are not valid responses.
     if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
     return v as Record<string, unknown>;
   } catch {
@@ -150,7 +150,7 @@ export const GET_RECEIPT_DEFINITION = {
 
 async function handleGetReceipt(args: unknown) {
   const raw = (args as { index?: unknown })?.index;
-  // alcuni client MCP mandano i numeri come stringhe JSON: coerciamo "5" -> 5
+  // Some MCP clients send numbers as JSON strings: coerce "5" to 5.
   const index = typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : raw;
   if (typeof index !== "number" || !Number.isSafeInteger(index) || index < 0) {
     return receiptError("index must be a non-negative safe integer");

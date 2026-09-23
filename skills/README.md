@@ -28,7 +28,7 @@ Each skill is a folder with `SKILL.md` (YAML frontmatter + Markdown). At session
 | `crash-shield-risk-management` | User wants algorithmic risk management for agent treasury |
 | `jit-redemption-pattern` | User needs scripted GBLIN→USDC conversion for outgoing payments |
 | `erc8021-attribution` | User wants to add Builder Code referral attribution |
-| `earn-as-base-keeper` | User wants an agent that earns keeper bounties on Base |
+| `earn-as-base-keeper` | User wants an agent that earns the auction premium on Base |
 | `risk-attestation` | User wants signed, portable proof-of-diligence for agent actions |
 
 ## Install

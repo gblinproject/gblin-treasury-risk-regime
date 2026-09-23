@@ -10,7 +10,7 @@
 ## What this repo is
 
 `@gblin-protocol/mcp-server` is the official **Model Context Protocol** server
-for the GBLIN protocol on Base mainnet. It exposes 13 tools that let any AI
+for the GBLIN protocol on Base mainnet. It exposes fifteen tools that let any AI
 agent read live treasury state, verify governance and attestations, and
 produce ready-to-broadcast calldata to enter, leave and bid.
 
@@ -112,6 +112,8 @@ if x402_invoice_arrives  AND  usdc_balance < invoice_amount:
 | `analyze_treasury_health` | Full balance, gas runway, rebalance hint |
 | `get_governance_state` | Owner, pending owner, timelock roles and scheduled operations |
 | `get_auction_state` | The rebalancing auction: side, gap and premium per row, with the bid |
+| `prepare_gblin_payment` | Build a gasless GBLIN payment: EIP-712 message, calldata and x402 payload |
+| `verify_gblin_authorization` | Check a signed authorization against the chain before spending gas |
 
 ### Anti-patterns to avoid
 

@@ -31,6 +31,7 @@ export const GBLIN_ABI = parseAbi([
   "function acceptOwnership()",
 
   // Payments by signature (EIP-3009)
+  "function eip712Domain() view returns (bytes1 fields, string name, string version, uint256 chainId, address verifyingContract, bytes32 salt, uint256[] extensions)",
   "function authorizationState(address authorizer, bytes32 nonce) view returns (bool)",
   "function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)",
   "function receiveWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)",
