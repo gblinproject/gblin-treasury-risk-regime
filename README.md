@@ -146,6 +146,7 @@ A stateless Streamable HTTP server runs at `https://gblin-mcp.gblin-mcp-worker.w
     - `from` (string): the wallet that will send the steps
     - `steps` (array): the steps as the tools return them: `target`, `calldata`, optional `value` and `gas`
   - For steps into the vault or the Zap the recommended limit is the smallest one that passes, found by bisection: the vault reserves gas for its capped transfers, so the gas a call uses is below the limit it needs
+  - `gas_limit_enough` is `true` when the step passes with the limit it carries, `false` only when that limit is what makes it fail, and `null` when it fails for another reason (a slippage bound, a cooldown), which `error` and `hint` name
 
 - **get_transaction_status**
   - What a sent transaction did: pending, success, reverted or not found; block, confirmations, fee, net token movements for the sender, and the decoded reason when it reverted

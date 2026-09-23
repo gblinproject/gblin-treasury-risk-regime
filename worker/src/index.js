@@ -54,7 +54,7 @@ const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // Bumped on EVERY deploy. The authoritative identifier of the surface remains
 // manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.0" };
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.1" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -1061,7 +1061,7 @@ const SURFACE_META = {
   tool_count: TOOLS.length,
   paid_over_mcp: false,
   sibling_package: {
-    name: "@gblin-protocol/mcp-server", version: "0.5.0", transport: "stdio (npm)", tool_count: 20,
+    name: "@gblin-protocol/mcp-server", version: "0.5.1", transport: "stdio (npm)", tool_count: 20,
     note: "Runs locally over stdio. Its vault, action and payment tools are also served here under two-level names (treasury.*, actions.*, payments.*, governance.state, auction.state, attestation.verify), from the same source. It adds share_skill_with_peer, swap_gblin_to_usdc_jit, invest_usdc_to_gblin and the receipt tools under their npm names, 4 prompts and 4 resources. It holds no key and never sends a transaction.",
   },
   resources: ["gblin://howto/attestation", "gblin://howto/seal", "gblin://limits", "gblin://keys"],

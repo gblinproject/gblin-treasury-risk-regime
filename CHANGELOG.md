@@ -3,6 +3,17 @@
 All notable changes to `@gblin-protocol/mcp-server` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] - 2026-09-23
+
+### Fixed
+- `get_nav_history` reads the past through five public endpoints that serve historical state (Tenderly,
+  Blast, dRPC, Nodies, mainnet.base.org), each tried once, instead of two. Run from a hosted server, the two
+  were both refused or rate-limited from datacenter ranges, and every failed attempt spends part of the
+  request budget.
+- `preview_steps` reported `gas_limit_enough: false` whenever a step failed, even when it failed for another
+  reason (a slippage bound, a cooldown). It is now `false` only when the limit is what makes the step fail,
+  and `null` when the step fails for another reason.
+
 ## [0.5.0] - 2026-09-23
 
 ### Added
