@@ -19,12 +19,17 @@ Documentation and quick start: [gblin.digital/agents](https://gblin.digital/agen
 
 - Market risk regime (`calm` / `elevated` / `crash`) read from the vault's on-chain Crash Shield, with a severity score and a risk posture
 - Quotes at NAV for minting and redeeming, with a dynamic slippage buffer
-- Unsigned calldata to mint with USDC and to exit to USDC just in time for a payment, through the GBLIN Zap
+- One tool that prepares any operation on the vault (mint with ETH, WETH or USDC, redeem in kind, exit to ETH or USDC, bid in the auction), each step with its gas limit
+- Simulation of those steps before signing, in sequence against the latest block, with decoded revert reasons and the gas limit each vault step really needs
+- The outcome of a sent transaction, and the NAV per share over time beside ETH and BTC
 - Treasury health of an agent wallet: balances, gas runway, cooldown, allocation advice
 - Governance verification: owner, pending owner, timelock roles and scheduled operations, computed from the chain
 - The state of the rebalancing auction, row by row, with the bid to send
+- Gasless payments in GBLIN (EIP-3009): prepare the authorization to sign, check it against the chain before anyone spends gas, and, when nobody else will carry it, have GBLIN's relay settle it with the fee in GBLIN, in one atomic transaction
 - Offline verification of Risk Attestations (EIP-712) and of AI Action Receipts (RFC 6962)
 - A portable skill seed to onboard a peer agent
+- Four prompts (ready-made workflows) and four resources (deployment, payments, keys, limits)
+- An `outputSchema` on every tool that returns an object, so a client can validate results and generate types
 
 Every tool is free. The server never charges: revenue comes from the on-chain protocol fee when an agent actually uses GBLIN. Verifiable pay-per-call lives on the HTTP endpoints listed under [x402 endpoints](#x402-endpoints).
 
@@ -43,7 +48,7 @@ Fees: 0.10% on every mint with ETH or WETH (0.05% stays in the vault and lifts t
 
 ## Hosted variant
 
-A stateless Streamable HTTP server with a smaller tool set runs at `https://gblin-mcp.gblin-mcp-worker.workers.dev/mcp` — no install, no auth, no session, 60 requests per minute per IP. GET-only audit surfaces: [`/meta`](https://gblin-mcp.gblin-mcp-worker.workers.dev/meta), [`/tools.json`](https://gblin-mcp.gblin-mcp-worker.workers.dev/tools.json), [`/resources.json`](https://gblin-mcp.gblin-mcp-worker.workers.dev/resources.json), [`/conformance`](https://gblin-mcp.gblin-mcp-worker.workers.dev/conformance). Also listed on [Smithery](https://smithery.ai/servers/gblin-protocol/mcp).
+A stateless Streamable HTTP server runs at `https://gblin-mcp.gblin-mcp-worker.workers.dev/mcp` — no install, no auth, no session, 60 requests per minute per IP. It serves the vault, action and payment tools of this package under two-level names (`treasury.*`, `actions.*`, `payments.*`, `governance.state`, `auction.state`, `attestation.verify`), built from the same source, plus the risk, receipts and coherence tools; the snake_case names below are accepted there as aliases. GET-only audit surfaces: [`/meta`](https://gblin-mcp.gblin-mcp-worker.workers.dev/meta), [`/tools.json`](https://gblin-mcp.gblin-mcp-worker.workers.dev/tools.json), [`/resources.json`](https://gblin-mcp.gblin-mcp-worker.workers.dev/resources.json), [`/conformance`](https://gblin-mcp.gblin-mcp-worker.workers.dev/conformance). Also listed on [Smithery](https://smithery.ai/servers/gblin-protocol/mcp).
 
 ## API
 
@@ -119,6 +124,38 @@ A stateless Streamable HTTP server with a smaller tool set runs at `https://gbli
     - `method` (string, optional): `receive` (default) or `transfer`
   - These are the checks an x402 facilitator runs, so a `would_settle` verdict means the payment is good to carry
 
+- **relay_gblin_payment**
+  - Hands a signed payment and a signed relay fee to GBLIN's relay (`https://gblin.digital/api/relay/gblin`), which checks both against the chain, simulates them and submits them in one transaction through Multicall3: both settle or neither does. For a payer that holds no ETH and has nobody to carry the payment
+  - Inputs:
+    - `payment` (object): `{ authorization, signature }`, method `transfer`
+    - `fee` (object): `{ authorization, signature }` from the `relay` block of `prepare_gblin_payment` called with `relay: true`
+  - The fee is quoted live by the relay, in GBLIN at the NAV. This tool moves funds: it is marked destructive so clients ask before running it
+
+- **prepare_action**
+  - Builds the unsigned steps for any operation on the vault, in order, each through the vault or the Zap carrying its gas limit
+  - Inputs:
+    - `action` (string): `mint_with_eth`, `mint_with_weth`, `mint_with_usdc`, `redeem_in_kind`, `exit_to_eth`, `exit_to_usdc` or `bid`
+    - `wallet_address` (string): the wallet that will sign and receive
+    - `amount` (string): in ETH, WETH or USDC for mints, in shares for redemptions and the ETH exit, the USDC needed for the USDC exit; not used by `bid`
+    - `row` (integer, optional): `bid` only, the basket row; default the largest gap
+  - Returns the steps, what they should deliver with the minimums applied, and warnings such as an active cooldown or an amount above the balance
+
+- **preview_steps**
+  - Simulates a list of transactions in sequence against the latest block with `eth_simulateV1`, each seeing the state the previous ones left. Returns, per step, success, gas used, whether the given limit is enough, the recommended limit and the decoded revert reason with a hint; and the net token and ETH movements for the wallet
+  - Inputs:
+    - `from` (string): the wallet that will send the steps
+    - `steps` (array): the steps as the tools return them: `target`, `calldata`, optional `value` and `gas`
+  - For steps into the vault or the Zap the recommended limit is the smallest one that passes, found by bisection: the vault reserves gas for its capped transfers, so the gas a call uses is below the limit it needs
+
+- **get_transaction_status**
+  - What a sent transaction did: pending, success, reverted or not found; block, confirmations, fee, net token movements for the sender, and the decoded reason when it reverted
+  - Inputs: `hash` (string)
+
+- **get_nav_history**
+  - NAV per share over time, read at past blocks, beside the ETH/USD and BTC/USD feeds the vault uses, with the change of each over the window and the NAV's largest drawdown. History starts at the deployment of the vault in service
+  - Inputs: `interval` (`hour` or `day`, default `day`), `points` (2 to 90, default 30)
+  - Historical reads use public endpoints that serve them; set `GBLIN_ARCHIVE_RPC_URL` to use your own
+
 - **verify_risk_attestation**
   - Verifies a Risk Attestation offline: recomputes the EIP-712 id, recovers the signer and checks it against the published attestor, checks freshness, and reports the live drift of the regime since issuance
   - Inputs:
@@ -150,10 +187,34 @@ Every tool sets [MCP tool annotations](https://modelcontextprotocol.io/specifica
 
 | Tool | readOnlyHint | idempotentHint | destructiveHint | openWorldHint |
 |---|---|---|---|---|
-| all except `seal_action_demo` | `true` | `true` | `false` | `true` |
+| all except the three below | `true` | `true` | `false` | `true` |
+| `prepare_gblin_payment` | `true` | `false` | `false` | `true` |
 | `seal_action_demo` | `false` | `false` | `false` | `true` |
+| `relay_gblin_payment` | `false` | `true` | `true` | `true` |
 
-Calldata builders are read-only: they return bytes, they do not send them. Sealing appends to a public log and is never destructive.
+Calldata builders are read-only: they return bytes, they do not send them. `prepare_gblin_payment` is not idempotent because every call draws a fresh nonce. Sealing appends to a public log and is never destructive. `relay_gblin_payment` moves the payer's funds on chain, so it is marked destructive and clients should confirm before calling it. Every tool also carries a human-readable `title`.
+
+### Output schemas
+
+Every tool except `seal_action_demo` declares an `outputSchema`. A successful result carries the same object as `structuredContent` and as JSON text. The `required` list of each schema is the contract: fields a successful call always returns. Other fields are described but optional, and the schemas accept additional fields, so adding one is not a breaking change. Errors carry `isError: true` and no structured content.
+
+### Prompts
+
+| Prompt | What it does |
+|---|---|
+| `risk_gate` | Reads the regime and applies a rule stated before looking: proceed, halve, or stand down |
+| `pay_in_gblin` | Prepare, sign in the payer's wallet, verify, then hand on a gasless GBLIN payment |
+| `pay_invoice_just_in_time` | Exit just enough GBLIN to USDC to settle an invoice, after checking cooldown and gas |
+| `seal_and_verify` | Seal an action, read the receipt back, and state what it does and does not prove |
+
+### Resources
+
+| URI | Content |
+|---|---|
+| `gblin://contracts` | Every contract in service with its role, and the deprecated deployments not to use |
+| `gblin://payments` | The EIP-712 domain read live from the token, the x402 payload, and the accepts block a seller publishes |
+| `gblin://keys` | The attestor address to pin, and where the log and witness keys are published |
+| `gblin://limits` | Price (free by default), the metering switch, and where the limits come from |
 
 ## Usage
 
@@ -234,7 +295,7 @@ Pay-per-call data lives on HTTP, settled in USDC on Base through the Coinbase CD
 | `GET gblin.digital/api/x402/invest` | $0.002 | Unsigned calldata: USDC → GBLIN |
 | `GET gblin.digital/api/x402/jit` | $0.005 | Unsigned calldata: GBLIN → USDC just in time |
 | `GET gblin.digital/api/x402/attestation` | $0.003 | Signed EIP-712 Risk Attestation, valid ten minutes |
-| `POST gblin.digital/api/x402/seal` | $0.01 | A sealed AI Action Receipt |
+| `POST gblin.digital/api/x402/seal` | $0.0045 | A sealed AI Action Receipt |
 
 Machine-readable manifest: `https://gblin.digital/.well-known/x402`. Payment recipient: `0x0ebA5d314F4f5Dcb7A094953Fa9311a45172dd1B`.
 
@@ -255,7 +316,7 @@ receipt = canonical payload
 
 Canonicalization is frozen as `gblin-canonical-json/1`: object keys sorted by UTF-16 code unit, no whitespace, `JSON.stringify` semantics for primitives, recursion for objects and arrays. Test vector: payload `{"b":1,"a":null}` → canonical `{"a":null,"b":1}` → leaf = `SHA256(0x00 || canonical_bytes)`. The receipt signature is Ed25519 over `"gblin-receipt/v1\n" + canonical`.
 
-- Seal (paid, unlimited): `POST https://gblin.digital/api/x402/seal`, $0.01 USDC via x402
+- Seal (paid, unlimited): `POST https://gblin.digital/api/x402/seal`, $0.0045 USDC via x402
 - Seal (demo, 5 per day per IP): `POST <worker>/v1/seal-demo`, or the tool `seal_action_demo`
 - Read, free: `<worker>/v1/receipt/:index`, `/log`, `/log/checkpoint`, `/log/proof/:index`, `/log/consistency`, `/log/leaves`, and the page `/receipt/:index`
 - Daily anchor of the tree root on Base as an EAS attestation (schema `0x9f433a96…`)
@@ -289,8 +350,21 @@ git clone https://github.com/gblinproject/gblin-treasury-risk-regime
 cd gblin-treasury-risk-regime
 npm install
 npm run build
-npm test         # live, read-only smoke test against Base mainnet
-npm start        # run the compiled server
+npm test                 # handler smoke test against Base mainnet, read-only
+npm run test:protocol    # speaks MCP over stdio: capabilities, instructions, prompts, resources
+npm run test:schemas     # every tool through the official MCP client, which validates outputSchema
+npx tsx scripts/test-hosted.ts <url>   # the hosted server over Streamable HTTP, with the same validation
+npm start                # run the compiled server
+```
+
+Two tests run against a local fork of Base and send transactions there, never on mainnet:
+
+```bash
+anvil --fork-url <base rpc> --port 8555 &
+export GBLIN_RPC_URL=http://127.0.0.1:8555
+npm run test:payments    # gasless payment: signed, verified, carried by a third party; replay and front-run refused
+npm run test:calldata    # sends the exit and investment steps exactly as the tools return them
+npm run test:actions     # every prepare_action, simulated then sent; preview agrees with the chain; gas limits found by bisection
 ```
 
 ```
@@ -300,12 +374,19 @@ src/
   client.ts    # viem public client and on-chain timestamp
   helpers.ts   # NAV, basket state, slippage, cooldown, reverse quote
   auction.ts   # auction state and bid sizing
-  tools.ts     # the ten treasury tools and their schemas
+  tools.ts     # the treasury, auction and risk tools, and the tool list
+  payments.ts  # gasless payments (EIP-3009): prepare, verify, relay
+  actions.ts   # prepare_action, preview_steps, get_transaction_status, get_nav_history
+  shared.ts    # result envelopes, builder code, Zap routing data and gas limit
+  version.ts   # generated from package.json by scripts/write-version.mjs
   receipts.ts  # the three receipt tools
-  index.ts     # MCP stdio server entry
+  output-schemas.ts  # the outputSchema of every tool
+  prompts.ts   # the four prompts
+  resources.ts # the four resources
+  index.ts     # MCP stdio server entry and initialize instructions
   init.ts      # the gblin-init command
 worker/        # the hosted Streamable HTTP server (Cloudflare Workers)
-scripts/test.ts
+scripts/       # test.ts, test-protocol.ts, test-output-schemas.ts, test-payments-fork.ts, test-calldata-fork.ts
 ```
 
 ## Links

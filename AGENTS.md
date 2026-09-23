@@ -10,7 +10,7 @@
 ## What this repo is
 
 `@gblin-protocol/mcp-server` is the official **Model Context Protocol** server
-for the GBLIN protocol on Base mainnet. It exposes fifteen tools that let any AI
+for the GBLIN protocol on Base mainnet. It exposes twenty tools that let any AI
 agent read live treasury state, verify governance and attestations, and
 produce ready-to-broadcast calldata to enter, leave and bid.
 
@@ -35,9 +35,11 @@ swap) that lets agents convert GBLIN to USDC the moment an x402 invoice arrives.
 2. **Never accept `minOut = 0`.** Every swap quote must produce a strictly
    positive `minOut` derived from the Lens (`quoteSell` / `quoteBuy`)
    plus a dynamic slippage buffer (2.5 % normal / 4 % during Crash Shield).
-3. **Stale-feed guard.** Reject any Chainlink ETH/USD answer older than 24 h
-   or non-positive. Tools must abort with a clear error rather than return
-   bad data.
+3. **Stale-feed guard.** Reject any Chainlink answer that is non-positive or
+   older than the vault accepts: 26 hours for a stable asset's feed, the
+   vault's own `oracleAge` (read live through the Lens) for every other. The
+   server never quotes on a price the contract would refuse; tools abort with
+   a clear error rather than return bad data.
 4. **No new RPC endpoints.** Stick to Base mainnet via the user-supplied
    `GBLIN_RPC_URL` env var (defaults to `https://base-rpc.publicnode.com`).
 5. **No emoji in code or commits** unless the user explicitly asks.
@@ -50,8 +52,15 @@ swap) that lets agents convert GBLIN to USDC the moment an x402 invoice arrives.
 
 | Path | Purpose |
 | --- | --- |
-| `src/index.ts` | MCP server entry — registers the 10 tools |
-| `src/tools.ts` | All tool definitions + handlers (treasury, quote, JIT, invest, health, governance, keeper, risk, share, verify) |
+| `src/index.ts` | MCP server entry — registers tools, prompts and resources, and the instructions sent at initialize |
+| `src/tools.ts` | Tool definitions and handlers (treasury, quote, JIT, invest, health, governance, auction, risk, share, verify) |
+| `src/payments.ts` | Gasless GBLIN payments (EIP-3009): prepare, verify and relay an authorization |
+| `src/actions.ts` | prepare_action, preview_steps, get_transaction_status, get_nav_history |
+| `src/shared.ts` | Result envelopes, builder code, Zap routing data and gas limit |
+| `src/receipts.ts` | AI Action Receipts: demo seal, receipt read, paid-seal instructions |
+| `src/auction.ts` | Reads the rebalancing auction through the Lens |
+| `src/output-schemas.ts` | The `outputSchema` of every tool: the fields a successful result always carries |
+| `src/prompts.ts` / `src/resources.ts` | MCP prompts (workflows) and resources (reference data) |
 | `src/client.ts` / `src/abi.ts` / `src/helpers.ts` | viem client, ABI fragments, NAV math, slippage |
 | `server.json` | MCP registry manifest (do not bump version casually) |
 | `llms.txt` | Crawler-friendly index used by AI tooling discovery |
@@ -60,9 +69,14 @@ swap) that lets agents convert GBLIN to USDC the moment an x402 invoice arrives.
 
 ```bash
 npm install
-npm run build         # tsc; must pass
-npm test              # if tests exist for the tool you touched
-npm run prepublish    # bumps dist/, runs build, lints package.json
+npm run build                 # tsc; must pass
+npm test                      # handler tests against Base mainnet (read-only)
+npm run test:protocol         # speaks MCP over stdio: capabilities, prompts, resources
+npm run test:schemas          # every tool through the official MCP client, validating outputSchema
+# On a fork of Base (anvil --fork-url <rpc> --port 8555), with GBLIN_RPC_URL=http://127.0.0.1:8555:
+npm run test:payments         # gasless payment: sign, verify, carry, replay and front-run refused
+npm run test:calldata         # sends the JIT exit and the investment steps exactly as returned
+npm run test:actions          # every prepare_action: simulated, sent, read back; gas limits by bisection
 ```
 
 Releases are manual: `npm version patch && npm publish --access public`.
@@ -96,24 +110,36 @@ if usdc_balance > 7 * daily_burn_usd  AND  no_pending_x402_invoice:
     call invest_usdc_to_gblin    (park SURPLUS USDC — keep operating cash in USDC)
 
 if x402_invoice_arrives  AND  usdc_balance < invoice_amount:
-    call swap_gblin_to_usdc_jit  (one atomic tx → enough USDC to pay)
+    call swap_gblin_to_usdc_jit  (three transactions, batchable → enough USDC to pay)
 ```
 
-### The 10 tools
+### The twenty tools
 
 | Tool | Use it when |
 | --- | --- |
-| `get_market_risk_regime` | Before any risk decision — BTC/ETH regime + posture ($0.002) |
-| `verify_risk_attestation` | Verify a peer's Risk Attestation before trusting it (free) |
-| `get_treasury_state` | Read live NAV, basket weights, Crash Shield status |
-| `quote_safe_swap` | Preview a buy/sell with MEV-safe `minOut` |
-| `swap_gblin_to_usdc_jit` | Pay an x402 invoice — atomic GBLIN→USDC swap |
-| `invest_usdc_to_gblin` | Convert agent earnings (USDC) back into GBLIN |
-| `analyze_treasury_health` | Full balance, gas runway, rebalance hint |
-| `get_governance_state` | Owner, pending owner, timelock roles and scheduled operations |
+| `get_market_risk_regime` | Before any risk decision: calm, elevated or crash, read on chain |
+| `verify_risk_attestation` | Verify a peer's signed risk attestation before trusting it |
+| `get_treasury_state` | Read live NAV, basket weights, fees and crash-shield status |
+| `quote_safe_swap` | Preview a mint with ETH or an exit to ETH, with a safe minimum out |
+| `swap_gblin_to_usdc_jit` | Pay an invoice: exit GBLIN to exactly the USDC needed |
+| `invest_usdc_to_gblin` | Park surplus USDC in GBLIN |
+| `analyze_treasury_health` | Balances, gas runway, cooldown and a rebalance hint |
+| `get_governance_state` | Owner, timelock, pending handover and scheduled operations |
 | `get_auction_state` | The rebalancing auction: side, gap and premium per row, with the bid |
+| `prepare_action` | Prepare any operation: mint with ETH, WETH or USDC, redeem in kind, exit to ETH or USDC, bid |
+| `preview_steps` | Before signing: simulate the steps and get the gas each vault step really needs |
+| `get_transaction_status` | After sending: what the transaction did |
+| `get_nav_history` | How the NAV moved over time, beside ETH and BTC |
 | `prepare_gblin_payment` | Build a gasless GBLIN payment: EIP-712 message, calldata and x402 payload |
+| `relay_gblin_payment` | When nobody else will carry the payment: GBLIN's relay settles it, fee in GBLIN |
 | `verify_gblin_authorization` | Check a signed authorization against the chain before spending gas |
+| `share_skill_with_peer` | Hand another agent a ready-to-install description of this server |
+| `seal_action_demo` | Seal the hashes of an action into the public transparency log (5 per day per IP) |
+| `get_receipt` | Read a sealed receipt back, with its inclusion proof |
+| `how_to_seal_paid` | Instructions for paid, unlimited seals over x402 |
+
+Every tool is free by default. Every tool but `seal_action_demo` declares an
+`outputSchema`; the four prompts and four resources are listed by the server.
 
 ### Anti-patterns to avoid
 
@@ -122,7 +148,8 @@ if x402_invoice_arrives  AND  usdc_balance < invoice_amount:
 - Holding the agent's private key in your server just to perform swaps —
   this MCP server is **stateless and key-less by design**.
 - Hard-coding the GBLIN contract address — read it from `get_treasury_state`
-  so the agent stays correct across upgrades.
+  (`meta.vault`) or the `gblin://contracts` resource, so the agent follows a
+  redeployment instead of paying into a contract that is no longer in service.
 
 ### Resources
 

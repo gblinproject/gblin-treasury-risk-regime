@@ -33,6 +33,7 @@ import { publishAuctionOrders, publisherStatus } from "./auctionpublisher.mjs";
 // off silently (fail-safe).
 import { witnessTick, witnessIndex, witnessLatestNote, witnessAddCheckpoint, witnessHistory, witnessDiscoverLogs, witnessConfiguredLogs, WITNESSED_LOGS } from "./witness.mjs";
 import { x402StaticChallenge } from "./x402-challenge.mjs";
+import { BRIDGED_TOOLS, BRIDGED_ALIASES, isBridged, callBridged } from "./stdio-tools.mjs";
 import { incidentFor, incidentResponse } from "./incidents.mjs";
 import { countCall, countOutcome, knownMethod, flushUsageNow, deferredFlush, recentUsage } from "./mcpusage.mjs";
 import { recordRefund, refundSummary } from "./refunds.mjs";
@@ -53,7 +54,7 @@ const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // Bumped on EVERY deploy. The authoritative identifier of the surface remains
 // manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.12.3" };
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.0" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -130,14 +131,14 @@ const RESOURCES = [
   { uri: "gblin://howto/attestation", name: "How to buy the signed risk attestation (x402)", mimeType: "application/json",
     description: "Endpoint, price, x402 flow and offline verification of the EIP-712-signed Risk Attestation ($0.003 USDC on Base)." },
   { uri: "gblin://howto/seal", name: "How to seal AI actions without limits (x402)", mimeType: "application/json",
-    description: "Paid seal endpoint ($0.01 USDC on Base via x402), fields, free reading routes and the offline verifier." },
+    description: "Paid seal endpoint ($0.0045 USDC on Base via x402), fields, free reading routes and the offline verifier." },
   { uri: "gblin://limits", name: "Rate limits and costs of this server", mimeType: "application/json",
     description: "Machine-readable numbers: 60 requests/min/IP on /mcp, receipts.seal demo 5/day/IP, all tools free; paid prices of the x402 HTTP endpoints." },
   { uri: "gblin://keys", name: "Signing keys and rotation policy", mimeType: "application/json",
     description: "Current verifier keys (receipts log, witness), the EAS attester wallet, and the pre-registered key-rotation procedure (how old receipts stay verifiable)." },
 ];
 
-const TOOLS = [
+const NATIVE_TOOLS = [
   {
     name: "risk.regime",
     description:
@@ -329,6 +330,9 @@ const TOOLS = [
     },
   },
 ];
+
+// The npm package's tools, served here from the same source (./stdio-tools.mjs).
+const TOOLS = NATIVE_TOOLS.concat(BRIDGED_TOOLS);
 
 // ── Coherence Proof v0 — self-observation ─────────────────────────────
 //
@@ -944,16 +948,10 @@ const LEGACY_TOOL_NAMES = {
 //     while still separating a misconfigured client from a fuzzer.
 // Keep in sync with TOOL_DEFINITIONS in ../src/tools.ts.
 const STDIO_ONLY_TOOLS = {
-  get_treasury_state: "paid HTTP endpoint GET https://gblin.digital/api/x402/treasury-state (x402, $0.001); free summary via protocol.info",
-  quote_safe_swap: "paid HTTP endpoint GET https://gblin.digital/api/x402/quote?direction=buy|sell&amount=<n> (x402, $0.001)",
-  swap_gblin_to_usdc_jit: "paid HTTP endpoint GET https://gblin.digital/api/x402/jit (x402, $0.005); the swap itself needs a signer, which this server never has",
-  invest_usdc_to_gblin: "paid HTTP endpoint GET https://gblin.digital/api/x402/invest (x402, $0.002); the transaction itself needs a signer",
-  analyze_treasury_health: "paid HTTP endpoint GET https://gblin.digital/api/x402/health (x402, $0.002)",
-  get_governance_state: "paid HTTP endpoint GET https://gblin.digital/api/x402/governance (x402, $0.001); timelock and owner addresses are also in protocol.info (free)",
+  swap_gblin_to_usdc_jit: "actions.prepare with action exit_to_usdc (same steps), or the paid endpoint GET https://gblin.digital/api/x402/jit",
+  invest_usdc_to_gblin: "actions.prepare with action mint_with_usdc (same steps), or the paid endpoint GET https://gblin.digital/api/x402/invest",
   share_skill_with_peer: "no equivalent here; protocol.info returns the same llms.txt the skill points to",
-  get_auction_state: "paid HTTP endpoint GET https://gblin-sentinel.vercel.app/api/data/keeper-opps (x402, $0.002): the rebalancing auction, row by row; the same views are public on the GBLIN Lens 0xfCFea8027019E8551A1f09AD91532471F5D26f61",
-  find_keeper_bounty: "removed: the vault in service has no bounty; see get_auction_state in the stdio package",
-  verify_risk_attestation: "no equivalent here: verification is pure EIP-712 math, see resource gblin://howto/attestation and gblin://keys for the attestor address",
+  find_keeper_bounty: "removed: the vault in service has no bounty; see auction.state",
 };
 
 async function callTool(rawName, env, args = {}, req = {}) {
@@ -986,7 +984,7 @@ async function callTool(rawName, env, args = {}, req = {}) {
       const { ip, ctx } = req;
       if (!(await demoAllowed(env, ip || "unknown"))) {
         countOutcome("receipts.seal", "quota");
-        throw Object.assign(new Error("demo limit reached (5/day/IP). For unlimited seals pay $0.01 via x402: POST https://gblin.digital/api/x402/seal"), { code: -32602 });
+        throw Object.assign(new Error("demo limit reached (5/day/IP). For unlimited seals pay $0.0045 via x402: POST https://gblin.digital/api/x402/seal"), { code: -32602 });
       }
       const r = await sealAction(env, args, { demo: true });
       if (r.status !== 200) {
@@ -1060,11 +1058,11 @@ function howtoAttestation() {
 const SURFACE_META = {
   server: SERVER_INFO,
   transport: "streamable-http (stateless, no auth)",
-  tool_count: 8,
+  tool_count: TOOLS.length,
   paid_over_mcp: false,
   sibling_package: {
-    name: "@gblin-protocol/mcp-server", version: "0.5.0", transport: "stdio (npm)", tool_count: 15,
-    note: "Different, larger tool set: the 10 treasury/governance tools (get_treasury_state, quote_safe_swap, swap_gblin_to_usdc_jit, invest_usdc_to_gblin, analyze_treasury_health, get_governance_state, share_skill_with_peer, get_auction_state, get_market_risk_regime, verify_risk_attestation) plus the 3 receipt tools. Transactions there go through the GBLIN Zap and need a signer the operator configures.",
+    name: "@gblin-protocol/mcp-server", version: "0.5.0", transport: "stdio (npm)", tool_count: 20,
+    note: "Runs locally over stdio. Its vault, action and payment tools are also served here under two-level names (treasury.*, actions.*, payments.*, governance.state, auction.state, attestation.verify), from the same source. It adds share_skill_with_peer, swap_gblin_to_usdc_jit, invest_usdc_to_gblin and the receipt tools under their npm names, 4 prompts and 4 resources. It holds no key and never sends a transaction.",
   },
   resources: ["gblin://howto/attestation", "gblin://howto/seal", "gblin://limits", "gblin://keys"],
   prompts: ["risk_gate", "seal_and_verify"],
@@ -1188,7 +1186,7 @@ async function readResource(uri, env) {
       tools_free: true, auth_required: false, session_required: false,
       paid: {
         attestation: { url: `${SITE}/api/x402/attestation`, price_usdc: 0.003, network: "eip155:8453", protocol: "x402" },
-        seal: { url: `${SITE}/api/x402/seal`, price_usdc: 0.01, network: "eip155:8453", protocol: "x402" },
+        seal: { url: `${SITE}/api/x402/seal`, price_usdc: 0.0045, network: "eip155:8453", protocol: "x402" },
       },
       // Reading /v1/receipt/<index> immediately after a seal can return 404 for a few
       // seconds: the store behind the log is eventually consistent. This is expected and
@@ -1250,7 +1248,7 @@ async function handleMessage(msg, env, req = {}) {
   try {
     if (method === "tools/call") {
       const requested = params && params.name;
-      const resolved = LEGACY_TOOL_NAMES[requested] || requested;
+      const resolved = LEGACY_TOOL_NAMES[requested] || BRIDGED_ALIASES[requested] || requested;
       countCall("tools/call", TOOLS.some((t) => t.name === resolved) ? resolved
         : (Object.prototype.hasOwnProperty.call(STDIO_ONLY_TOOLS, resolved) ? `stdio-only:${resolved}` : "unknown"));
     } else if (method !== "notifications/initialized") {
@@ -1270,7 +1268,7 @@ async function handleMessage(msg, env, req = {}) {
           capabilities: { tools: {}, resources: {}, prompts: {} },
           serverInfo: SERVER_INFO,
           instructions:
-            "GBLIN hosted MCP (stateless, no auth, 60 req/min/IP, everything here is free). TWO THINGS LIVE HERE. (1) AI ACTION RECEIPTS - a public append-only RFC 6962 transparency log for AI actions. receipts.seal appends the SHA-256 of your input (and optionally your output) plus a short public label, and returns a portable receipt: Ed25519 signature, inclusion proof, C2SP checkpoint, tree root anchored daily on Base. Minimal call: receipts.seal {action: \"what you did\", input_hash: \"<sha256 hex>\"} - demo mode, 5/day/IP, receipts marked demo:true. Then receipts.verify checks it with pure math, no trust in this server; receipts.get re-reads any receipt by index. A receipt proves the record existed here at this time - NOT that the action happened (provenance is self-reported). (2) MARKET RISK: risk.regime (live calm|elevated|crash from the on-chain Crash Shield), risk.attestation_sample, protocol.stats, protocol.info, coherence.report. Nothing is paid over MCP; unlimited seals and signed attestations are x402 HTTP endpoints - see resources gblin://howto/seal, gblin://howto/attestation, gblin://limits, gblin://keys. Ready-made prompts: seal_and_verify, risk_gate. The stdio package @gblin-protocol/mcp-server is a different, larger toolset (treasury/swap tools).",
+            "GBLIN hosted MCP (stateless, no auth, 60 req/min/IP, everything here is free). THREE THINGS LIVE HERE. (1) AI ACTION RECEIPTS - a public append-only RFC 6962 transparency log for AI actions. receipts.seal appends the SHA-256 of your input (and optionally your output) plus a short public label, and returns a portable receipt: Ed25519 signature, inclusion proof, C2SP checkpoint, tree root anchored daily on Base. Minimal call: receipts.seal {action: \"what you did\", input_hash: \"<sha256 hex>\"} - demo mode, 5/day/IP, receipts marked demo:true. Then receipts.verify checks it with pure math, no trust in this server; receipts.get re-reads any receipt by index. A receipt proves the record existed here at this time - NOT that the action happened (provenance is self-reported). (2) MARKET RISK: risk.regime (live calm|elevated|crash from the on-chain Crash Shield), risk.attestation_sample, protocol.stats, protocol.info, coherence.report. Nothing is paid over MCP; unlimited seals and signed attestations are x402 HTTP endpoints - see resources gblin://howto/seal, gblin://howto/attestation, gblin://limits, gblin://keys. Ready-made prompts: seal_and_verify, risk_gate. (3) THE GBLIN VAULT, the same code as the npm package @gblin-protocol/mcp-server: treasury.state, treasury.quote, treasury.health, treasury.nav_history, governance.state, auction.state, attestation.verify; to act, actions.prepare (any operation) -> actions.preview (simulate before signing; finds the gas each vault step really needs) -> send from your own wallet -> actions.status; to pay in GBLIN with a signature and no ETH, payments.prepare -> payments.verify, or payments.relay when nobody else will carry it. This server holds no key and never signs. The npm package's snake_case tool names are accepted here as aliases.",
         });
       }
       case "ping":
@@ -1295,6 +1293,11 @@ async function handleMessage(msg, env, req = {}) {
       }
       case "tools/call": {
         const name = params && params.name;
+        const bridged = BRIDGED_ALIASES[name] || name;
+        if (isBridged(bridged)) {
+          // The npm package's handler returns a complete tool result: pass it through.
+          return rpcResult(id, await callBridged(bridged, (params && params.arguments) || {}));
+        }
         try {
           const out = await callTool(name, env, (params && params.arguments) || {}, req);
           return rpcResult(id, {
@@ -1467,7 +1470,7 @@ export default {
         site: SITE,
         witness: "/witness (we cosign third-party transparency-log checkpoints; C2SP tlog-cosignature v1)",
         audit: "/meta · /tools.json · /resources.json · /conformance · /v1/verify/:index (GET-only audit of the MCP surface)",
-        receipts: "/log (AI Action Receipts: seal what your agent did — $0.01 via x402 at gblin.digital/api/x402/seal, demo via MCP tool receipts.seal)",
+        receipts: "/log (AI Action Receipts: seal what your agent did — $0.0045 via x402 at gblin.digital/api/x402/seal, demo via MCP tool receipts.seal)",
         prompts: PROMPTS.map((p) => p.name),
         resources: RESOURCES.map((r) => r.uri),
         observatory: "/observatory (human) · /observatory.json · /catalog · /observatory/badge.svg?host=… — liveness probes of the public x402 catalog, our own endpoints under the same rules",
@@ -1535,7 +1538,7 @@ export default {
     }
 
     // AI Action Receipts — signed and witnessed seals of AI actions.
-    // Paid: through the resource server at /api/x402/seal ($0.01 via x402), which forwards
+    // Paid: through the resource server at /api/x402/seal ($0.0045 via x402), which forwards
     // here with the internal token. Demo: 5/day/IP, marked demo:true. Reading and verifying
     // are free.
     // Manual discovery of witness-network logs, on top of the daily run.
@@ -1626,7 +1629,7 @@ export default {
     if (url.pathname === "/v1/seal-demo" && request.method === "POST") {
       if (!(await demoAllowed(env, ip))) {
         countOutcome("seal-demo", "quota");
-        return json({ error: "demo limit reached (5/day/IP). For unlimited seals pay $0.01 via x402: POST https://gblin.digital/api/x402/seal" }, 429);
+        return json({ error: "demo limit reached (5/day/IP). For unlimited seals pay $0.0045 via x402: POST https://gblin.digital/api/x402/seal" }, 429);
       }
       let body;
       try { body = await request.json(); }
@@ -1678,7 +1681,7 @@ export default {
       const st = await rlogStatus(env);
       return json({ ...st,
         what: "GBLIN AI Action Receipts — signed append-only RFC 6962 transparency log of sealed AI actions (input/output as hashes only; the action label and metadata you send are published). A seal proves existence and time; root anchored daily on Base via EAS. It is NOT a compliance certificate and NOT an endorsement. The checkpoint is cosigned by an independent witness since 2026-08-22 (see /log/witnesses); that cosignature attests only that the log stayed append-only between the sizes it has seen. More witnesses welcome.",
-        seal_paid: "POST https://gblin.digital/api/x402/seal ($0.01 USDC via x402)",
+        seal_paid: "POST https://gblin.digital/api/x402/seal ($0.0045 USDC via x402)",
         seal_demo: "POST /v1/seal-demo (5/day/IP, marked demo:true)",
         read: "GET /v1/receipt/:index (free forever) · GET /log/proof/:index · GET /log/checkpoint",
         explorer: "GET /receipt/:index (human page)",

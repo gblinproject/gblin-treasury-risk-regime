@@ -16,7 +16,8 @@ import type { Address } from "viem";
 
 import { CHAINLINK_AGGREGATOR_ABI, ERC20_ABI, GBLIN_ABI, LENS_ABI } from "./abi.js";
 import { client, getOnChainTimestamp } from "./client.js";
-import { GBLIN_LENS, GBLIN_VAULT, ORACLE_STALENESS_SECONDS, WETH } from "./config.js";
+import { GBLIN_LENS, GBLIN_VAULT, WETH } from "./config.js";
+import { getMaxOracleAgeSeconds } from "./helpers.js";
 
 // ─── Pure math ────────────────────────────────────────────────────────────────
 
@@ -90,12 +91,12 @@ export interface AuctionState {
   note: string;
 }
 
-async function oraclePrice(oracle: Address, now: number): Promise<bigint> {
+async function oraclePrice(oracle: Address, now: number, stableFeed = false): Promise<bigint> {
   try {
     const d = await client.readContract({ address: oracle, abi: CHAINLINK_AGGREGATOR_ABI, functionName: "latestRoundData" });
     const answer = d[1];
     const updatedAt = Number(d[3]);
-    if (answer <= 0n || now - updatedAt > ORACLE_STALENESS_SECONDS) return 0n;
+    if (answer <= 0n || now - updatedAt > (await getMaxOracleAgeSeconds(stableFeed))) return 0n;
     return answer;
   } catch {
     return 0n;
@@ -143,7 +144,7 @@ export async function getAuctionState(): Promise<AuctionState> {
     let inputAmountRaw = gapEth;
     let inputDecimals = 18;
     if (vaultBuysAsset && !isWeth) {
-      const assetPrice = await oraclePrice(row[1], now);
+      const assetPrice = await oraclePrice(row[1], now, row[2]);
       inputToken = token;
       inputSymbol = String(symbol);
       inputDecimals = Number(decimals);

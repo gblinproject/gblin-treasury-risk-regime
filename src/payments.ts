@@ -9,6 +9,8 @@
  *                                and the x402 payment payload for a paid HTTP endpoint.
  *   verify_gblin_authorization → checks a signed authorization against the chain before anyone
  *                                spends gas submitting it.
+ *   relay_gblin_payment        → hands a signed payment and a signed relay fee to GBLIN's relay, which
+ *                                carries both in one transaction for a payer that holds no ETH.
  *
  * Neither tool holds, asks for or transmits a private key. The signature is produced by the caller's
  * own wallet from the typed data returned here.
@@ -35,6 +37,9 @@ import { ERC20_ABI, GBLIN_ABI } from "./abi.js";
 import { client, getOnChainTimestamp } from "./client.js";
 import { BASE_CHAIN_ID, GBLIN_VAULT } from "./config.js";
 import { getNavUsd } from "./helpers.js";
+
+/** GBLIN's payment relay: GET quotes the fee, POST carries a signed payment and fee in one transaction. */
+const RELAY_URL = process.env.GBLIN_RELAY_URL ?? "https://gblin.digital/api/relay/gblin";
 
 /** Seconds an authorization stays valid when the caller does not say otherwise. */
 const DEFAULT_VALIDITY_SECONDS = 600;
@@ -171,7 +176,7 @@ async function resolveValue(args: Record<string, unknown>): Promise<{ value: big
 export const PREPARE_PAYMENT_TOOL = {
   name: "prepare_gblin_payment",
   description:
-    "Build a gasless GBLIN payment. The vault's share token implements EIP-3009, so the holder signs an authorization and anybody can carry it on chain: the payer needs no ETH. Returns the EIP-712 message to sign (its domain is read from the token, not assumed), the calldata that carries the signed authorization, and the x402 'exact' payload for paying an HTTP endpoint in GBLIN. Use method 'receive' when paying a known recipient: only that recipient can submit it, so nobody can front-run the transfer. Use 'transfer' for an x402 facilitator, which submits on the seller's behalf. No private key is requested, held or transmitted: the signature is produced by the caller's own wallet.",
+    "Build a gasless GBLIN payment. The vault's share token implements EIP-3009, so the holder signs an authorization and anybody can carry it on chain: the payer needs no ETH. Returns the EIP-712 message to sign (its domain is read from the token, not assumed), the calldata that carries the signed authorization, and the x402 'exact' payload for paying an HTTP endpoint in GBLIN. Use method 'receive' when paying a known recipient: only that recipient can submit it, so nobody can front-run the transfer. Use 'transfer' for an x402 facilitator, which submits on the seller's behalf. With relay: true it also prepares the fee authorization for relay_gblin_payment, for when nobody else will carry the payment. No private key is requested, held or transmitted: the signature is produced by the caller's own wallet.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -187,6 +192,11 @@ export const PREPARE_PAYMENT_TOOL = {
       valid_for_seconds: {
         type: "number",
         description: `How long the authorization stays valid. Default ${DEFAULT_VALIDITY_SECONDS}, maximum ${MAX_VALIDITY_SECONDS}.`,
+      },
+      relay: {
+        type: "boolean",
+        description:
+          "true when nobody else will carry the payment on chain: also prepares the relay fee authorization, paid in GBLIN at the live NAV, for relay_gblin_payment. Forces method 'transfer'.",
       },
     },
     required: ["from", "to"],
@@ -207,7 +217,8 @@ export async function handlePreparePayment(args: Record<string, unknown>): Promi
   const to = requireAddress(args.to, "to");
   if (from.toLowerCase() === to.toLowerCase()) throw new Error("from and to are the same address");
 
-  const method = args.method === "transfer" ? "transfer" : "receive";
+  const relay = args.relay === true;
+  const method = relay || args.method === "transfer" ? "transfer" : "receive";
   const validity = Math.floor(Number(args.valid_for_seconds ?? DEFAULT_VALIDITY_SECONDS));
   if (!Number.isFinite(validity) || validity <= 0 || validity > MAX_VALIDITY_SECONDS) {
     throw new Error(`valid_for_seconds must be between 1 and ${MAX_VALIDITY_SECONDS}`);
@@ -236,6 +247,47 @@ export async function handlePreparePayment(args: Record<string, unknown>): Promi
   };
 
   const primaryType = method === "receive" ? "ReceiveWithAuthorization" : "TransferWithAuthorization";
+
+  // With the relay: a second authorization, for the fee, signed by the same payer with its own nonce.
+  let relayBlock: Record<string, unknown> | null = null;
+  let feeValue = 0n;
+  if (relay) {
+    const quote = (await fetch(RELAY_URL, { signal: AbortSignal.timeout(15_000) }).then((r) => r.json()).catch(() => null)) as
+      | { enabled?: boolean; fee?: { units?: string; recipient?: string; usd?: number; gblin?: string } }
+      | null;
+    if (!quote?.fee?.units || !quote.fee.recipient) throw new Error(`The relay at ${RELAY_URL} did not answer with a fee quote.`);
+    if (quote.enabled === false) throw new Error("The relay is not accepting payments right now.");
+    feeValue = BigInt(quote.fee.units);
+    const feeAuthorization: Authorization = {
+      from,
+      to: getAddress(quote.fee.recipient),
+      value: feeValue.toString(),
+      validAfter: validAfter.toString(),
+      validBefore: validBefore.toString(),
+      nonce: `0x${randomBytes(32).toString("hex")}` as Hex,
+    };
+    const feeTyped = {
+      domain,
+      types: { TransferWithAuthorization: AUTHORIZATION_TYPE },
+      primaryType: "TransferWithAuthorization",
+      message: { ...feeAuthorization },
+    };
+    relayBlock = {
+      url: RELAY_URL,
+      fee_usd: quote.fee.usd,
+      fee_gblin: formatUnits(feeValue, 18),
+      fee_authorization: feeAuthorization,
+      fee_typed_data: feeTyped,
+      fee_digest: hashTypedData({
+        domain,
+        types: { TransferWithAuthorization: AUTHORIZATION_TYPE },
+        primaryType: "TransferWithAuthorization",
+        message: feeTyped.message as never,
+      }),
+      next: "Sign typed_data and fee_typed_data with the payer's wallet, then call relay_gblin_payment with both authorizations and signatures. Both settle in one transaction or neither does.",
+    };
+  }
+
   const typedData = {
     domain,
     types: { [primaryType]: AUTHORIZATION_TYPE },
@@ -267,20 +319,21 @@ export async function handlePreparePayment(args: Record<string, unknown>): Promi
     },
     payer_balance: {
       gblin: formatUnits(balance, 18),
-      sufficient: balance >= value,
+      sufficient: balance >= value + feeValue,
     },
+    ...(relayBlock ? { relay: relayBlock } : {}),
     next_steps: [
       `Sign typed_data with the wallet of ${from} (eth_signTypedData_v4). The signature never leaves that wallet.`,
       "Pass the signature back to verify_gblin_authorization to check it against the chain before anyone spends gas.",
       method === "receive"
-        ? `Only ${to} can submit this one: send submit.calldata to the token from that address.`
-        : "Anyone can submit this one: send submit.calldata to the token, or hand the x402 payload to a facilitator.",
+        ? `Only ${to} can submit this one: send the calldata that verify_gblin_authorization returns to the token, from that address.`
+        : "Anyone can submit this one: send the calldata that verify_gblin_authorization returns to the token, or hand the x402 payload to a facilitator.",
     ],
     submit: {
       to: GBLIN_VAULT,
       function: method === "receive" ? "receiveWithAuthorization" : "transferWithAuthorization",
       note: "Append the signature: either the 65-byte form split into v, r, s, or the single bytes form. Both are accepted.",
-      calldata_template: "Call build_submit_calldata in verify_gblin_authorization once the signature exists.",
+      calldata: "Returned by verify_gblin_authorization once the signature exists and the authorization would settle.",
     },
     x402_payload: {
       note: "Paste the signature into payload.signature. This is the body that goes base64 in the X-PAYMENT header of an endpoint priced in GBLIN.",
@@ -303,6 +356,59 @@ export async function handlePreparePayment(args: Record<string, unknown>): Promi
   });
   } catch (err) {
     return paymentError((err as Error).message, "Check the addresses and the amount, and that the RPC is reachable.");
+  }
+}
+
+export const RELAY_PAYMENT_TOOL = {
+  name: "relay_gblin_payment",
+  description:
+    "Have GBLIN's relay carry a signed GBLIN payment on chain for a payer that holds no ETH. Pass the payment and the relay fee, each as { authorization, signature }, both prepared by prepare_gblin_payment with relay: true and signed by the payer's wallet. The relay checks both against the chain, simulates them and submits them in one transaction through Multicall3: either both settle or neither does. The fee is paid in GBLIN at the live NAV. Returns the transaction hash and its outcome. This moves funds: run it only with authorizations the payer meant to sign.",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      payment: {
+        type: "object",
+        description: "{ authorization, signature } of the payment, method 'transfer'.",
+        properties: { authorization: { type: "object" }, signature: { type: "string", pattern: "^0x[0-9a-fA-F]+$" } },
+        required: ["authorization", "signature"],
+      },
+      fee: {
+        type: "object",
+        description: "{ authorization, signature } of the relay fee, from prepare_gblin_payment's relay block.",
+        properties: { authorization: { type: "object" }, signature: { type: "string", pattern: "^0x[0-9a-fA-F]+$" } },
+        required: ["authorization", "signature"],
+      },
+    },
+    required: ["payment", "fee"],
+    additionalProperties: false,
+  },
+  annotations: {
+    title: "Relay a gasless GBLIN payment",
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: true,
+    openWorldHint: true,
+  },
+};
+
+export async function handleRelayPayment(args: Record<string, unknown>): Promise<unknown> {
+  try {
+    const payment = args.payment as { authorization?: unknown; signature?: unknown } | undefined;
+    const fee = args.fee as { authorization?: unknown; signature?: unknown } | undefined;
+    if (!payment?.authorization || typeof payment.signature !== "string") throw new Error("payment must be { authorization, signature }");
+    if (!fee?.authorization || typeof fee.signature !== "string") throw new Error("fee must be { authorization, signature }");
+    const res = await fetch(RELAY_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ payment, fee }),
+      signal: AbortSignal.timeout(45_000),
+    });
+    const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!body) throw new Error(`The relay answered HTTP ${res.status} with no JSON body.`);
+    if (!res.ok) return paymentError(String(body.error ?? `HTTP ${res.status}`), "Nothing was moved. Fix the cause and sign fresh authorizations if a nonce was consumed.");
+    return paymentResult({ relay: RELAY_URL, ...body });
+  } catch (err) {
+    return paymentError((err as Error).message, `Is ${RELAY_URL} reachable from this machine?`);
   }
 }
 

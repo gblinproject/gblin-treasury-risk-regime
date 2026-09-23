@@ -27,7 +27,7 @@ const TRANSFER_ABI = [
     outputs: [{ name: "", type: "bool" }] },
 ] as const;
 import { GBLIN_VAULT } from "../src/config.js";
-import { handlePreparePayment, handleVerifyAuthorization } from "../src/payments.js";
+import { handlePreparePayment, handleRelayPayment, handleVerifyAuthorization } from "../src/payments.js";
 
 const RPC = process.env.GBLIN_RPC_URL ?? "http://127.0.0.1:8555";
 /** A holder with a live balance on Base; impersonated only on the fork. */
@@ -52,7 +52,7 @@ function check(name: string, condition: boolean, detail = ""): void {
     console.log(`  ok      ${name}`);
   } else {
     failures.push(name);
-    console.log(`  FALLITO ${name} ${detail}`);
+    console.log(`  FAILED  ${name} ${detail}`);
   }
 }
 
@@ -204,6 +204,25 @@ async function main(): Promise<void> {
   })) as bigint;
   check("the recipient holds 0.75 shares in total", finalRecipient === parseUnits("0.75", 18), formatUnits(finalRecipient, 18));
   check("the payer is still at zero ETH after two payments", (await test.getBalance({ address: payer.address })) === 0n);
+
+  // ── 8. the relay, when a relay is reachable (GBLIN_RELAY_URL on the fork) ────
+  if (process.env.GBLIN_RELAY_URL) {
+    const payee = privateKeyToAccount(generatePrivateKey()).address;
+    const prepared = await call(handlePreparePayment, { from: payer.address, to: payee, amount_gblin: "0.1", relay: true });
+    check("with relay, the method is transfer", prepared.method === "transfer");
+    check("with relay, a fee authorization is prepared", typeof prepared.relay?.fee_typed_data === "object");
+    const sign = (t: any) =>
+      payerWallet.signTypedData({ domain: t.domain, types: t.types, primaryType: t.primaryType, message: t.message });
+    const payment = { authorization: prepared.authorization, signature: await sign(prepared.typed_data) };
+    const fee = { authorization: prepared.relay.fee_authorization, signature: await sign(prepared.relay.fee_typed_data) };
+    const relayed = (await handleRelayPayment({ payment, fee })) as { structuredContent?: Record<string, any>; content?: { text: string }[] };
+    check("the relay settles it", relayed.structuredContent?.status === "settled", relayed.content?.[0]?.text?.slice(0, 300));
+    const payeeShares = (await test.readContract({ address: GBLIN_VAULT, abi: ERC20_ABI, functionName: "balanceOf", args: [payee] })) as bigint;
+    check("the payee received 0.1 through the relay", payeeShares === parseUnits("0.1", 18), formatUnits(payeeShares, 18));
+    check("the payer still has no ETH after the relay", (await test.getBalance({ address: payer.address })) === 0n);
+  } else {
+    console.log("  skipped the relay checks: GBLIN_RELAY_URL is not set");
+  }
 
   console.log(`\n=== ${passed} checks passed, ${failures.length} failed ===`);
   if (failures.length) {

@@ -19,14 +19,18 @@
     "llms.txt"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "node scripts/write-version.mjs && tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "init": "tsx src/init.ts",
     "test": "tsx scripts/test.ts",
     "demo": "tsx examples/demo-agent.ts",
     "prepublishOnly": "npm run build",
-    "test:payments": "tsx scripts/test-payments-fork.ts"
+    "test:payments": "tsx scripts/test-payments-fork.ts",
+    "test:protocol": "tsx scripts/test-protocol.ts",
+    "test:schemas": "tsx scripts/test-output-schemas.ts",
+    "test:calldata": "tsx scripts/test-calldata-fork.ts",
+    "test:actions": "tsx scripts/test-actions-fork.ts"
   },
   "keywords": [
     "mcp",

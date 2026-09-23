@@ -57,17 +57,37 @@ Claude Desktop config:
 5. `invest_usdc_to_gblin` — calldata to mint GBLIN with USDC through the Zap (two transactions)
 6. `analyze_treasury_health` — balances, gas runway, cooldown, rebalance advice
 7. `get_governance_state` — owner, pending owner, 48h timelock roles and scheduled operations
-8. `share_skill_with_peer` — portable JSON skill seed + referral code
+8. `share_skill_with_peer` — portable JSON skill seed for a peer agent (the referral code is a label only; no fee is paid for it)
 9. `get_auction_state` — the rebalancing auction: side, gap and premium per row, with the bid
 10. `verify_risk_attestation` — verify a Risk Attestation: integrity + EIP-712 signature + freshness + live drift
 11. `seal_action_demo` — seal the hashes of an AI action into the public transparency log (demo, 5/day/IP)
 12. `get_receipt` — fetch a sealed receipt with its inclusion proof
-13. `how_to_seal_paid` — how to seal without limits ($0.01 USDC per seal via x402)
+13. `how_to_seal_paid` — how to seal without limits ($0.0045 USDC per seal via x402)
 14. `prepare_gblin_payment` — build a gasless GBLIN payment: the EIP-712 message to sign, the calldata that carries it, and the x402 "exact" payload
 15. `verify_gblin_authorization` — check a signed authorization against the chain (signature, window, nonce, balance) before anyone spends gas
+16. `relay_gblin_payment` — when nobody else will carry the payment: GBLIN's relay settles payment and fee (in GBLIN) in one atomic transaction
+17. `prepare_action` — unsigned steps for any operation: mint with ETH, WETH or USDC, redeem in kind, exit to ETH or USDC, bid
+18. `preview_steps` — simulate the steps in sequence before signing; decoded reverts, and the gas limit each vault step really needs
+19. `get_transaction_status` — what a sent transaction did, with the net token movements
+20. `get_nav_history` — NAV per share over time beside ETH/USD and BTC/USD
+
+The hosted server (https://gblin-mcp.gblin-mcp-worker.workers.dev/mcp) serves the
+vault, action and payment tools under two-level names (treasury.*, actions.*,
+payments.*, governance.state, auction.state, attestation.verify), from the same
+source; the names above are accepted there as aliases.
 
 Every tool is free. The server never charges: revenue comes from the on-chain
 protocol fee when an agent actually uses GBLIN.
+
+Every tool except `seal_action_demo` declares an `outputSchema`; results carry
+the same object as `structuredContent`.
+
+## Prompts and resources
+
+Prompts: `risk_gate`, `pay_in_gblin`, `pay_invoice_just_in_time`, `seal_and_verify`.
+Resources: `gblin://contracts` (deployment in service and deprecated addresses),
+`gblin://payments` (EIP-712 domain read live, x402 payload and seller accepts
+block), `gblin://keys` (attestor to pin), `gblin://limits` (price and limits).
 
 ## Risk Attestation (perishable proof-of-diligence)
 

@@ -40,7 +40,7 @@ GBLIN is a strong fit for this segment because:
 
 2. **Crash Shield** auto-rebalances the basket toward USDC as assets draw down from peak (adaptive threshold, from about 15%). This is critical for autonomous agents that cannot monitor markets in real time.
 
-3. **NAV growth** comes from the 0.05% protocol fee on every purchase that goes to the treasury without minting corresponding GBLIN — making each existing token incrementally more valuable.
+3. **NAV growth** comes from the part of the mint fee (0.05% today, read live with `get_treasury_state`) that stays in the vault without minting any shares — making each existing share incrementally more valuable.
 
 4. **MEV protection** built into the two-step path through the Zap: approve USDC → `buyGBLINWithToken(USDC, amount, minWethOut, minOut, venueData, receiver)`. Both steps carry oracle-anchored minOut slippage checks.
 

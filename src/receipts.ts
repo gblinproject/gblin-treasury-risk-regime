@@ -7,7 +7,7 @@
  *
  *  11. seal_action_demo → POST <worker>/v1/seal-demo   (free, 5/day/IP, demo:true)
  *  12. get_receipt      → GET  <worker>/v1/receipt/:i  (free forever)
- *  13. how_to_seal_paid → static instructions for the paid $0.01 x402 route
+ *  13. how_to_seal_paid → static instructions for the paid $0.0045 x402 route
  */
 
 const WORKER_BASE = "https://gblin-mcp.gblin-mcp-worker.workers.dev";
@@ -19,10 +19,15 @@ const RECEIPT_NOTE =
   "A seal proves existence and time in a signed append-only log (root anchored daily on Base via EAS) — NOT a compliance certificate and NOT an endorsement. PRIVACY: input/output go in as hashes only; the action/agent_id/tool/meta strings you send are published in the public log — identifiers, never secrets.";
 
 function receiptResult(payload: unknown) {
+  const structured =
+    payload && typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : undefined;
   return {
     content: [
       { type: "text" as const, text: JSON.stringify(payload, null, 2) },
     ],
+    ...(structured ? { structuredContent: structured } : {}),
   };
 }
 
@@ -63,7 +68,7 @@ async function workerFetch(path: string, init?: RequestInit): Promise<Response> 
 export const SEAL_ACTION_DEMO_DEFINITION = {
   name: "seal_action_demo",
   description:
-    "Seal the HASHES of an AI action into GBLIN's public append-only RFC 6962 transparency log (FREE demo, 5/day/IP, receipt marked demo:true). Returns a portable receipt: Ed25519 signature + Merkle inclusion proof + operator-signed C2SP checkpoint, offline-verifiable forever with the zero-dependency verify-receipt.mjs. Input/output go in as sha256 HASHES only; the action label and metadata you send are published in the public log. Unlimited seals cost $0.01 via x402 — see how_to_seal_paid.",
+    "Seal the HASHES of an AI action into GBLIN's public append-only RFC 6962 transparency log (FREE demo, 5/day/IP, receipt marked demo:true). Returns a portable receipt: Ed25519 signature + Merkle inclusion proof + operator-signed C2SP checkpoint, offline-verifiable forever with the zero-dependency verify-receipt.mjs. Input/output go in as sha256 HASHES only; the action label and metadata you send are published in the public log. Unlimited seals cost $0.0045 via x402 — see how_to_seal_paid.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -116,7 +121,7 @@ async function handleSealActionDemo(args: unknown) {
       return receiptError(
         String(body.error ?? `seal-demo failed (HTTP ${res.status})`),
         res.status === 429
-          ? "Demo limit is 5 seals/day/IP. Unlimited seals: $0.01 via x402 — call how_to_seal_paid."
+          ? "Demo limit is 5 seals/day/IP. Unlimited seals: $0.0045 via x402 — call how_to_seal_paid."
           : "Check that input_hash is 64 lowercase hex chars and action is <=128 chars."
       );
     }
@@ -184,14 +189,14 @@ async function handleGetReceipt(args: unknown) {
 export const HOW_TO_SEAL_PAID_DEFINITION = {
   name: "how_to_seal_paid",
   description:
-    "Instructions for UNLIMITED paid seals ($0.01 USDC per seal via x402 on Base) in GBLIN's AI Action Receipts transparency log — endpoint, body schema, payment flow, and how to verify receipts offline. Free demo alternative: seal_action_demo (5/day/IP).",
+    "Instructions for UNLIMITED paid seals ($0.0045 USDC per seal via x402 on Base) in GBLIN's AI Action Receipts transparency log — endpoint, body schema, payment flow, and how to verify receipts offline. Free demo alternative: seal_action_demo (5/day/IP).",
   inputSchema: { type: "object" as const, properties: {}, additionalProperties: false },
 };
 
 async function handleHowToSealPaid() {
   return receiptResult({
     endpoint: `POST ${SEAL_PAID_URL}`,
-    price: "$0.01 USDC per seal via x402 (Base, eip155:8453)",
+    price: "$0.0045 USDC per seal via x402 (Base, eip155:8453)",
     flow:
       "POST without payment first → HTTP 402 with the x402 v2 challenge (PAYMENT-REQUIRED header, mirrored in the body). Settle with any x402 client (e.g. @x402/fetch): gasless EIP-3009 USDC transfer, then the same POST returns the sealed receipt.",
     body_schema: {
@@ -216,14 +221,16 @@ async function handleHowToSealPaid() {
 
 // MCP tool annotations: sealing appends to a public log (not read-only, not idempotent, never
 // destructive: nothing is overwritten); the other two only read.
-type ToolAnnotations = { readOnlyHint: boolean; idempotentHint: boolean; destructiveHint: boolean; openWorldHint: boolean };
-const READ_ONLY: ToolAnnotations = { readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true };
-const APPEND_ONLY: ToolAnnotations = { readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true };
+type ToolAnnotations = { title: string; readOnlyHint: boolean; idempotentHint: boolean; destructiveHint: boolean; openWorldHint: boolean };
+const readOnly = (title: string): ToolAnnotations =>
+  ({ title, readOnlyHint: true, idempotentHint: true, destructiveHint: false, openWorldHint: true });
+const appendOnly = (title: string): ToolAnnotations =>
+  ({ title, readOnlyHint: false, idempotentHint: false, destructiveHint: false, openWorldHint: true });
 
 export const RECEIPT_TOOL_DEFINITIONS = [
-  { ...SEAL_ACTION_DEMO_DEFINITION, annotations: APPEND_ONLY },
-  { ...GET_RECEIPT_DEFINITION, annotations: READ_ONLY },
-  { ...HOW_TO_SEAL_PAID_DEFINITION, annotations: READ_ONLY },
+  { ...SEAL_ACTION_DEMO_DEFINITION, annotations: appendOnly("Seal an action into the transparency log") },
+  { ...GET_RECEIPT_DEFINITION, annotations: readOnly("Fetch a sealed receipt") },
+  { ...HOW_TO_SEAL_PAID_DEFINITION, annotations: readOnly("How to seal without limits") },
 ];
 
 export const RECEIPT_TOOL_HANDLERS: Record<string, (args: unknown) => Promise<unknown>> = {

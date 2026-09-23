@@ -6,6 +6,19 @@ All notable changes to `@gblin-protocol/mcp-server` are documented here. The for
 ## [0.5.0] - 2026-09-23
 
 ### Added
+- `prepare_action`: the unsigned steps for any operation on the vault — mint with ETH, WETH or USDC, redeem in
+  kind, exit to ETH or USDC, bid in the auction — each step through the vault or the Zap with its gas limit.
+- `preview_steps`: the steps simulated in sequence against the latest block (`eth_simulateV1`), with decoded
+  revert reasons and net balance changes. For steps into the vault or the Zap the recommended gas limit is the
+  smallest that passes, found by bisection, because the gas a call uses is below the limit it needs.
+- `get_transaction_status`: what a sent transaction did, and why it reverted.
+- `get_nav_history`: NAV per share at past blocks beside the vault's ETH/USD and BTC/USD feeds; one multicall
+  per point. `GBLIN_ARCHIVE_RPC_URL` selects an archive endpoint.
+- `relay_gblin_payment`, and `relay: true` on `prepare_gblin_payment`: GBLIN's relay settles a signed payment
+  and a signed fee in GBLIN in one transaction through Multicall3, for a payer with no ETH.
+- The hosted server serves the vault, action and payment tools from this source (`../src`), so the two cannot
+  drift.
+- `npm run test:actions` on a fork: every action prepared, simulated, sent and read back.
 - `prepare_gblin_payment` and `verify_gblin_authorization`: paying in GBLIN with a signature and no ETH
   for gas, through the token's EIP-3009 surface. The first builds the EIP-712 message, the calldata and
   the x402 "exact" payload, and the accepts block a seller publishes to be paid in GBLIN; the second runs
@@ -16,11 +29,46 @@ All notable changes to `@gblin-protocol/mcp-server` are documented here. The for
 - `npm run test:payments`: twenty-six end-to-end checks against a fork of Base, including the failure
   modes — replay, foreign signature, expired window, insufficient balance, and an outsider trying to
   carry a `receive` authorization.
-- Tool results now also travel as `structuredContent` for clients that read it.
+- `outputSchema` on every tool except `seal_action_demo`. The required fields are the contract of a
+  successful result; the schemas stay open to additional fields.
+- Prompts: `risk_gate`, `pay_in_gblin`, `pay_invoice_just_in_time`, `seal_and_verify`.
+- Resources: `gblin://contracts`, `gblin://payments` (the EIP-712 domain read live), `gblin://keys`,
+  `gblin://limits`.
+- Tests: `test:protocol` speaks MCP over stdio; `test:schemas` calls every tool on every result path
+  through the official MCP client, which validates each result against its `outputSchema`, with a
+  negative control; `test:calldata` sends the exit and investment steps on a fork exactly as returned.
 
 ### Changed
+- Every tool now returns `structuredContent` beside the text, and carries a human title in its
+  annotations, matching what the hosted server already did.
+- `invest_usdc_to_gblin` no longer states the mint fee and the management fee in its description: both are
+  governance parameters, and a static description cannot follow a change. They are read live from
+  `get_treasury_state`.
 - The skill seed no longer offers "passive ETH income as a keeper": the vault in service pays no keeper
   bounty, the auction premium is the whole reward.
+- The oldest oracle answer the server accepts now follows the vault: its `oracleAge`, read through the
+  Lens, for volatile feeds, and 26 hours for the feed of a stable asset, instead of a fixed 24 hours for
+  all. The server no longer quotes on a price the contract would refuse.
+- The initialize instructions no longer say a signer is configured by the operator: the server holds no key.
+
+### Fixed
+- The AI Action Receipts paid seal is priced at $0.0045 (was $0.01), in the tool descriptions and the docs.
+- The package version is a constant generated at build time instead of a file read at run time.
+- `share_skill_with_peer` told the caller that referrals redirect part of the protocol fee to its wallet
+  and that every transaction carries the referral code. Neither is true: the code is a label inside the
+  seed, the server reads it nowhere, and the contract has no referral payout. The seed also listed ten
+  tools, named an earlier deployment, and told the peer to quote a USDC amount with a tool that takes ETH.
+- `quote_safe_swap` reported a fixed `total_fee_bps` of 10; it is now the sum of the fees read from the
+  vault.
+- `analyze_treasury_health` advised 90% GBLIN / 10% USDC by default "for treasury yield". GBLIN is crypto
+  exposure, not yield, and the advice contradicted the rule this server documents. It now advises only
+  when `daily_burn_usd` is given: seven days of spend stay in USDC, only the surplus is a candidate for
+  GBLIN, and never while the crash shield is active. The gas check uses the live gas price and the cost of
+  the three-step exit instead of fixed ETH thresholds, and reports `exit_cost_eth`.
+- Steps that go through the Zap now carry an explicit `gas` limit: an automatic estimate could fall just
+  under what the call needs, because the vault reserves gas for its capped transfers, and revert.
+- `prepare_gblin_payment` pointed to a calldata field it does not return; the calldata comes from
+  `verify_gblin_authorization`.
 
 ## [0.4.3] - 2026-09-23
 

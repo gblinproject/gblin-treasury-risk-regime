@@ -6,12 +6,11 @@
  */
 
 import type { Address } from "viem";
-import { createRequire } from "node:module";
-const require = createRequire(import.meta.url);
-const pkg = require("../package.json") as { version: string };
+
+import { PACKAGE_VERSION } from "./version.js";
 
 // ─── Version ────────────────────────────────────────────────────────────────
-export const PACKAGE_VERSION = pkg.version;
+export { PACKAGE_VERSION };
 
 // ─── Network ────────────────────────────────────────────────────────────────
 export const BASE_CHAIN_ID = 8453;
@@ -48,6 +47,15 @@ export const GBLIN_ZAP: Address = "0x0E9D6Ceb6D313b021622C121Cda9C62e86e60200";
 // Previous deployment, superseded. Kept only so that risk attestations signed under EIP-712 domain
 // version 1 remain verifiable; nothing is read from it.
 export const GBLIN_PREVIOUS: Address = "0x36C81d7E1966310F305eA637e761Cf77F90852f0";
+// An earlier deployment, also deprecated.
+export const GBLIN_PREVIOUS_2: Address = "0x38DcDB3A381677239BBc652aed9811F2f8496345";
+// The rest of the deployment in service. Every address carries verified source code on Base.
+export const GBLIN_SENTINEL: Address = "0x9F13C5c46a864183e1c57Ec02837fe5B980D3F67";
+export const GBLIN_UNISWAP_ADAPTER: Address = "0x062654Bf9b5Bd88b84D7861a8f22ba94dECd9d3F";
+export const GBLIN_FILL_AGENT: Address = "0x0f4307A5Eb7D33d04Cb68fb0bA4d47a56C7E2fc8";
+export const GBLIN_AUCTION_ORDER: Address = "0x156Ffd19819e02d9809cED8fa1416EDCD31ddaB9";
+// Uniswap V3 WETH/GBLIN pool, fee tier 0.3%.
+export const GBLIN_POOL: Address = "0x779C4260022bf7493d303Ff016C3C63215ee9B19";
 export const USDC: Address = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 export const WETH: Address = "0x4200000000000000000000000000000000000006";
 
@@ -78,7 +86,18 @@ export const WETH_USDC_POOL_FEE = 500; // 0.05%
 // ─── Protocol constants (mirror the vault's own settings) ──────────────────────────────
 // Redemption cooldown after a mint, in seconds. Read live from the Lens; this value is only the fallback when that read fails.
 export const COOLDOWN_SECONDS_FALLBACK = 20;
-export const ORACLE_STALENESS_SECONDS = 86_400; // 24h Chainlink heartbeat
+/**
+ * Fallback for the oldest oracle answer the server accepts. The live limit is the vault's own
+ * `oracleAge`, read through the Lens (see getMaxOracleAgeSeconds); this value is used only when
+ * that read fails.
+ */
+export const ORACLE_STALENESS_SECONDS = 7_200;
+
+/**
+ * The oldest answer the vault accepts from the feed of a stable asset, whose Chainlink heartbeat is
+ * a day. It is a constant in the contract (PRICE_MAX_AGE), not a governance parameter.
+ */
+export const STABLE_PRICE_MAX_AGE_SECONDS = 93_600;
 
 // ─── Slippage Buffers (basis points) ────────────────────────────────────────
 // Applied on top of contract-internal slippage (maxInternalSlippage = 200 bps)
@@ -92,4 +111,4 @@ export const BASKET_CACHE_TTL_MS = 60_000; // 60 seconds
 
 // ─── Metadata ───────────────────────────────────────────────────────────────
 export const SERVER_NAME = "gblin-treasury-mcp";
-export const SERVER_VERSION = pkg.version;
+export const SERVER_VERSION = PACKAGE_VERSION;

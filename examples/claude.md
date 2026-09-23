@@ -1,6 +1,6 @@
 # Claude (Desktop / Code / any MCP client) — GBLIN in 2 minutes
 
-## Option A — local (all 10 tools, incl. trade calldata)
+## Option A — local (all twenty tools, incl. trade calldata, simulation and gasless payments)
 
 `claude_desktop_config.json`:
 
@@ -15,7 +15,7 @@
 }
 ```
 
-## Option B — hosted, zero install (6 free read-only tools)
+## Option B — hosted, zero install (21 free tools)
 
 Streamable HTTP endpoint — works from any remote MCP client, no Node needed:
 
@@ -24,7 +24,9 @@ https://gblin-mcp.gblin-mcp-worker.workers.dev/mcp
 ```
 
 Tools: live risk regime, attestation sample, agent-economy stats, protocol info,
-how-to-buy guide, and the daily Coherence Proof report.
+the daily Coherence Proof report, the AI Action Receipts log (seal, read, verify), and
+the vault, action and payment tools of the npm package under two-level names
+(treasury.*, actions.*, payments.*, governance.state, auction.state, attestation.verify).
 
 ## Suggested system-prompt / AGENTS.md snippet
 

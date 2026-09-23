@@ -2,10 +2,9 @@
 /**
  * GBLIN MCP Server — entry point.
  *
- * Speaks the Model Context Protocol over stdio. Clients (desktop assistants,
- * AgentKit, Eliza, custom agents) discover and invoke the GBLIN tools listed
- * in TOOL_DEFINITIONS (13 as of 0.3.2: treasury/governance, risk regime,
- * risk attestation verification and the receipts trio).
+ * Speaks the Model Context Protocol over stdio and exposes three primitives: tools (TOOL_DEFINITIONS),
+ * prompts (PROMPT_DEFINITIONS) and resources (RESOURCE_DEFINITIONS). The server holds no keys and never
+ * sends a transaction: tools that act return unsigned calldata or typed data for the caller's wallet.
  *
  * IMPORTANT: never write to stdout via console.log — that channel is reserved
  * for MCP JSON-RPC frames. Use console.error (stderr) for diagnostics.
@@ -15,31 +14,59 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
+  ListResourcesRequestSchema,
   ListToolsRequestSchema,
+  McpError,
+  ErrorCode,
+  ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
 import { SERVER_NAME, SERVER_VERSION } from "./config.js";
+import { PROMPT_DEFINITIONS, getPrompt } from "./prompts.js";
+import { RESOURCE_DEFINITIONS, readResource } from "./resources.js";
 import { TOOL_DEFINITIONS, TOOL_HANDLERS } from "./tools.js";
 
-// Sent in the initialize result. The hosted HTTP server has had one since August; this
-// package sent none, so a client saw 13 bare tool names and no map. Kept short and factual.
+// Sent in the initialize result: a short, factual map of what this server does.
 const INSTRUCTIONS =
-  "GBLIN stdio MCP (" + SERVER_NAME + " v" + SERVER_VERSION + "). Read-only tools need no key: " +
-  "get_market_risk_regime (calm|elevated|crash from the on-chain Crash Shield on Base), " +
-  "get_treasury_state, get_governance_state, analyze_treasury_health, quote_safe_swap, " +
-  "get_auction_state (the vault rebalances by Dutch auction: side, gap and premium per row, with the bid to send), " +
-  "verify_risk_attestation (pure EIP-712 math), share_skill_with_peer. " +
-  "swap_gblin_to_usdc_jit and invest_usdc_to_gblin build transactions through the GBLIN Zap and need a signer " +
-  "configured by the operator. Receipts: seal_action_demo (5/day/IP, marked demo:true), " +
-  "get_receipt, how_to_seal_paid (unlimited seals are a paid x402 HTTP endpoint, $0.01 USDC). " +
-  "Everything here is free; paid signals are x402 HTTP endpoints at https://gblin.digital/api/x402 " +
-  "(docs: https://gblin.digital/llms.txt). A hosted, no-install variant with a different, smaller " +
-  "tool set lives at https://gblin-mcp.gblin-mcp-worker.workers.dev/mcp.";
+  "GBLIN stdio MCP (" + SERVER_NAME + " v" + SERVER_VERSION + "). GBLIN is an on-chain index of cbBTC, WETH and USDC on Base, " +
+  "minted and redeemed at NAV. This server holds no keys and never sends a transaction: tools that act return unsigned " +
+  "calldata or typed data for your own wallet to sign. " +
+  "Read: get_treasury_state, get_governance_state, get_auction_state (the vault rebalances by Dutch auction), " +
+  "get_market_risk_regime (calm|elevated|crash), analyze_treasury_health, quote_safe_swap, get_nav_history (NAV beside ETH and BTC). " +
+  "Act, in this order: prepare_action (any operation: mint with ETH, WETH or USDC, redeem in kind, exit to ETH or USDC, bid), " +
+  "preview_steps (simulate the steps before signing; it finds the gas each vault step really needs), send from your wallet, " +
+  "then get_transaction_status. Shortcuts: swap_gblin_to_usdc_jit (exit to USDC to pay an invoice), invest_usdc_to_gblin. " +
+  "Pay in GBLIN with a signature and no ETH (EIP-3009, x402 'exact'): prepare_gblin_payment, then verify_gblin_authorization; " +
+  "when nobody else will carry it, prepare with relay: true and hand both signatures to relay_gblin_payment (fee in GBLIN, one atomic transaction). " +
+  "Verify: verify_risk_attestation (pure EIP-712 math). Receipts: seal_action_demo, get_receipt, how_to_seal_paid. " +
+  "Prompts: risk_gate, pay_in_gblin, pay_invoice_just_in_time, seal_and_verify. " +
+  "Resources: gblin://contracts, gblin://payments, gblin://keys, gblin://limits. " +
+  "Every tool is free; paid data lives on x402 HTTP endpoints at https://gblin.digital (docs: https://gblin.digital/llms.txt).";
 
 const server = new Server(
   { name: SERVER_NAME, version: SERVER_VERSION },
-  { capabilities: { tools: {} }, instructions: INSTRUCTIONS }
+  { capabilities: { tools: {}, prompts: {}, resources: {} }, instructions: INSTRUCTIONS }
 );
+
+server.setRequestHandler(ListPromptsRequestSchema, async () => ({ prompts: PROMPT_DEFINITIONS }));
+
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  const { name, arguments: args } = request.params;
+  const prompt = getPrompt(name, (args ?? {}) as Record<string, unknown>);
+  if (!prompt) throw new McpError(ErrorCode.InvalidParams, `Unknown prompt: ${name}`);
+  return prompt;
+});
+
+server.setRequestHandler(ListResourcesRequestSchema, async () => ({ resources: RESOURCE_DEFINITIONS }));
+
+server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  const { uri } = request.params;
+  const body = await readResource(uri);
+  if (!body) throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
+  return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(body, null, 2) }] };
+});
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: TOOL_DEFINITIONS,

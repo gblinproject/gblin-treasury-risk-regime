@@ -1,6 +1,8 @@
 name = "gblin-mcp"
 main = "src/index.js"
 compatibility_date = "2026-07-01"
+# The npm package's tool handlers (../src) read process.env and use node:crypto.
+compatibility_flags = ["nodejs_compat"]
 
 # Kill switch: set MCP_DISABLED = "true" (dashboard → Settings → Variables)
 # to make every request return 503 without touching code.

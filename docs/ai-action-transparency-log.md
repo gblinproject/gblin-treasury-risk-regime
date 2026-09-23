@@ -46,7 +46,7 @@ Records are marked `demo: true`. Then check it without trusting this server:
     node verify-receipt.mjs receipt.json     # zero dependencies, does not call us
 
 Over MCP the same thing is the tool `receipts.seal` with `{action, input_hash}`; the paid, unmetered version is
-`POST https://gblin.digital/api/x402/seal` ($0.01 USDC via x402).
+`POST https://gblin.digital/api/x402/seal` ($0.0045 USDC via x402).
 
 Two things worth knowing before you send anything: `action`, `agent_id`, `tool` and `meta` are **published in
 the public log** — put identifiers there, never secrets — and only the *hashes* of your input and output ever

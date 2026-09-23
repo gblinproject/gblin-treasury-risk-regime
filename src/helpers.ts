@@ -26,6 +26,7 @@ import {
   GBLIN_VAULT,
   NAV_CACHE_TTL_MS,
   ORACLE_STALENESS_SECONDS,
+  STABLE_PRICE_MAX_AGE_SECONDS,
   SLIPPAGE_CRASH_SHIELD_BPS,
   SLIPPAGE_NORMAL_BPS,
   USDC,
@@ -36,6 +37,34 @@ import {
 // ───────────────────────────────────────────────────────────────────────────
 
 let ethPriceCache: { value: number; fetchedAt: number } | null = null;
+let oracleAgeCache: { value: number; fetchedAt: number } | null = null;
+
+/**
+ * The oldest oracle answer the vault itself accepts when it prices its NAV: a fixed 26 hours for
+ * the feed of a stable asset, and `oracleAge` (read from the contract) for every other feed. The
+ * server refuses the same prices the contract refuses.
+ */
+export async function getMaxOracleAgeSeconds(stableFeed = false): Promise<number> {
+  if (stableFeed) return STABLE_PRICE_MAX_AGE_SECONDS;
+  const now = Date.now();
+  if (oracleAgeCache && now - oracleAgeCache.fetchedAt < 10 * 60_000) return oracleAgeCache.value;
+  try {
+    const cfg = await client.readContract({
+      address: GBLIN_LENS,
+      abi: LENS_ABI,
+      functionName: "configFees",
+      args: [GBLIN_VAULT],
+    });
+    const value = Number(cfg[3]);
+    if (value > 0) {
+      oracleAgeCache = { value, fetchedAt: now };
+      return value;
+    }
+  } catch {
+    // Fall through to the fallback below.
+  }
+  return ORACLE_STALENESS_SECONDS;
+}
 
 export async function getEthPriceUsd(): Promise<number> {
   const now = Date.now();
@@ -58,9 +87,10 @@ export async function getEthPriceUsd(): Promise<number> {
   }
 
   const nowSec = Math.floor(now / 1_000);
-  if (nowSec - updatedAt > ORACLE_STALENESS_SECONDS) {
+  const maxAge = await getMaxOracleAgeSeconds();
+  if (nowSec - updatedAt > maxAge) {
     throw new Error(
-      `OracleStale: Chainlink ETH/USD feed is ${nowSec - updatedAt}s old (max ${ORACLE_STALENESS_SECONDS}s). Aborting to protect against MEV/slippage.`
+      `OracleStale: Chainlink ETH/USD feed is ${nowSec - updatedAt}s old (the vault accepts at most ${maxAge}s). Aborting rather than quoting on a price the contract would refuse.`
     );
   }
 
@@ -293,17 +323,10 @@ export async function quoteGblinForUsdc(
   const grossUsdcTarget =
     (usdcTargetUnits * BPS_DENOMINATOR * BPS_DENOMINATOR) / (keep * keep);
 
-  // Convert USDC (6 dec) → GBLIN (18 dec) using NAV.
-  // gblin = (grossUsdc / 1e6) / navUsd  →  scale to 18-dec wei
-  // Using BigInt math: gblin = grossUsdc * 1e12 * 1e6 / (navUsd_scaled)
-  // We scale navUsd by 1e6 for precision.
+  // Convert USDC to shares at NAV. Both grossUsdcTarget and navUsdScaled are USD scaled by 1e6, so
+  // shares (18 decimals) = grossUsdcTarget * 1e18 / navUsdScaled. Scaling the NAV to a millionth of a
+  // dollar bounds the relative error near 1e-8, far inside the slippage buffer.
   const navUsdScaled = BigInt(Math.round(navUsd * 1_000_000));
-  // gblinToSell = grossUsdcTarget(6 dec) * 1e18 / (navUsdScaled / 1e6) → simplifies to:
-  // gblinToSell = grossUsdcTarget * 1e18 * 1e6 / (navUsdScaled * 1e6) = grossUsdcTarget * 1e18 / navUsdScaled
-  // Wait — need to align decimals carefully:
-  // grossUsdcTarget has 6 decimals → represents USD * 1e6
-  // navUsdScaled represents USD * 1e6
-  // So gblinUnits (18 decimals) = (grossUsdcTarget / navUsdScaled) * 1e18
   const gblinToSell =
     (grossUsdcTarget * parseUnits("1", 18)) / navUsdScaled;
 
