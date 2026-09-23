@@ -1024,7 +1024,7 @@ function howtoSeal() {
   return {
         what: "AI Action Receipts: a portable, signed receipt for any AI action, in a public append-only transparency log. Input/output go in as HASHES only (the action label and metadata you send are published); you get back signature + RFC 6962 inclusion proof + a C2SP checkpoint signed by us and cosigned by an independent witness (markovianprotocol.com/witness, since 2026-08-22); the tree root is anchored daily on Base (EAS). Evidence of existence and time — NOT a compliance certificate. A cosignature attests only that the log stayed append-only between the sizes that witness has seen; it says nothing about whether a sealed action is true.",
         paid_endpoint: `${SITE}/api/x402/seal`,
-        price: "0.01 USDC on Base via x402 (unlimited)",
+        price: "0.0045 USDC on Base via x402 (unlimited)",
         demo: "MCP tool receipts.seal (mode demo) or POST https://gblin-mcp.gblin-mcp-worker.workers.dev/v1/seal-demo (5/day/IP, receipts marked demo:true)",
         fields: { action: "string <=128 (required)", input_hash: "sha256 hex of your input (required)", output_hash: "sha256 hex (optional)", agent_id: "string <=128 (optional)", tool: "string <=128 (optional)", meta: "JSON <=512 chars (optional)" },
         human_page: "GET /receipt/:index — HTML page that verifies the receipt in the browser",

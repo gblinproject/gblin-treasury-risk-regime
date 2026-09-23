@@ -55,7 +55,7 @@ async function main(): Promise<void> {
   await run("treasury.nav_history", { interval: "hour", points: 6 });
   await run("governance.state", {});
   await run("auction.state", {});
-  const prepared = await run("actions.prepare", { action: "exit_to_eth", wallet_address: HOLDER, amount: "0.001" });
+  const prepared = await run("actions.prepare", { action: "exit_to_eth", wallet_address: HOLDER, amount: "0.01" });
   if (prepared) {
     const preview = await run("actions.preview", { from: HOLDER, steps: prepared.steps });
     check("the preview of a prepared exit would succeed", preview?.would_succeed === true, JSON.stringify(preview).slice(0, 300));

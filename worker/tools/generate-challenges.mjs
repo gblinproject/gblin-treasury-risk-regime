@@ -128,7 +128,7 @@ const json = (body, status, extra = {}) => new Response(body, {
 const SOLO_POST = new Set(["x402/seal"]);
 const SOLO_POST_BODY = JSON.stringify({
   error: "POST only",
-  how: "POST JSON {action, input_hash, output_hash?, agent_id?, tool?, meta?} with x402 payment ($0.01). Free demo (5/day/IP): POST https://gblin-mcp.gblin-mcp-worker.workers.dev/v1/seal-demo. Docs: /api/x402/llms.txt",
+  how: "POST JSON {action, input_hash, output_hash?, agent_id?, tool?, meta?} with x402 payment ($0.0045). Free demo (5/day/IP): POST https://gblin-mcp.gblin-mcp-worker.workers.dev/v1/seal-demo. Docs: /api/x402/llms.txt",
 });
 
 export function x402StaticChallenge(request) {

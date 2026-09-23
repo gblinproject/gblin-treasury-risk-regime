@@ -46,16 +46,23 @@ const LENS_DEPLOY_BLOCK = 51_563_262n;
 const BLOCKS_PER_HOUR = 1_800n;
 
 /** Public endpoints that serve historical state and eth_simulateV1 (checked on Base mainnet). */
-// drpc first: mainnet.base.org refuses requests from some datacenter ranges (Cloudflare among them),
-// and every failed attempt costs a request.
-const HISTORY_RPCS = ["https://base.drpc.org", "https://mainnet.base.org"];
+// Checked on Base mainnet for historical eth_call. Several, because a hosted server reaches some and not
+// others (mainnet.base.org refuses or rate-limits datacenter ranges, Cloudflare among them), and every failed
+// attempt costs a request, so each endpoint is tried once.
+const HISTORY_RPCS = [
+  "https://gateway.tenderly.co/public/base",
+  "https://base-mainnet.public.blastapi.io",
+  "https://base.drpc.org",
+  "https://base-public.nodies.app",
+  "https://mainnet.base.org",
+];
 
 const historyClient = createPublicClient({
   chain: base,
   transport: fallback(
     [
       ...(process.env.GBLIN_ARCHIVE_RPC_URL ? [http(process.env.GBLIN_ARCHIVE_RPC_URL, { timeout: 15_000 })] : []),
-      ...HISTORY_RPCS.map((url) => http(url, { timeout: 15_000, retryCount: 1 })),
+      ...HISTORY_RPCS.map((url) => http(url, { timeout: 15_000, retryCount: 0 })),
     ],
     { rank: false }
   ),
@@ -589,7 +596,9 @@ export async function handlePreviewSteps(args: unknown) {
         success: ok,
         gas_used: Number(gasUsed),
         gas_limit_given: given === null ? null : Number(given),
-        gas_limit_enough: given === null ? null : ok,
+        // true when the step passes with its limit; false only when the limit is what makes it fail;
+        // null when it fails for another reason, since the simulation cannot tell whether the limit would do.
+        gas_limit_enough: given === null ? null : ok ? true : outOfGas ? false : null,
         recommended_gas_limit: Number(recommended),
         ...(given === null && RESERVE_TARGETS.has(s.target.toLowerCase())
           ? { gas_warning: "No gas limit given: send this step with recommended_gas_limit. A wallet's automatic estimate can fall under what the vault's capped transfers need." }
