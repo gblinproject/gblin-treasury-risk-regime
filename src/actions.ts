@@ -68,6 +68,23 @@ const historyClient = createPublicClient({
   ),
 });
 
+/**
+ * One client per endpoint, asked in turn. A fallback transport moves on only when an endpoint errors,
+ * but an endpoint a block behind answers "no receipt yet" without erroring, and a transaction already
+ * mined would be reported as pending. Asking each until one has the receipt avoids that.
+ */
+const ENDPOINT_CLIENTS = [
+  client,
+  ...HISTORY_RPCS.map((url) => createPublicClient({ chain: base, transport: http(url, { timeout: 8_000, retryCount: 0 }) })),
+];
+async function firstNonNull<T>(read: (c: typeof client) => Promise<T | null>): Promise<T | null> {
+  for (const c of ENDPOINT_CLIENTS) {
+    const value = await read(c as typeof client).catch(() => null);
+    if (value) return value;
+  }
+  return null;
+}
+
 /** Custom errors of the vault, the Zap and the adapter, from the verified sources. */
 const PROTOCOL_ERRORS = parseAbi([
   "error AssetAlreadyExists()",
@@ -648,16 +665,19 @@ export async function handleTransactionStatus(args: unknown) {
   if (!parsed.success) return toolError(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
   const hash = parsed.data.hash as Hex;
   try {
-    const receipt = await client.getTransactionReceipt({ hash }).catch(() => historyClient.getTransactionReceipt({ hash }).catch(() => null));
+    const receipt = await firstNonNull((c) => c.getTransactionReceipt({ hash }));
     if (!receipt) {
-      const tx = await client.getTransaction({ hash }).catch(() => null);
+      const tx = await firstNonNull((c) => c.getTransaction({ hash }));
       return toolResult({
         hash,
         status: tx ? "pending" : "not_found",
         note: tx ? "Known to the node but not yet in a block." : "No node consulted knows this hash. It may not have been broadcast.",
       });
     }
-    const [latest, tx] = await Promise.all([client.getBlockNumber(), client.getTransaction({ hash }).catch(() => null)]);
+    const [latest, tx] = await Promise.all([
+      firstNonNull((c) => c.getBlockNumber()),
+      firstNonNull((c) => c.getTransaction({ hash })),
+    ]);
     const succeeded = receipt.status === "success";
     let revert: { error: string; hint?: string } | null = null;
     if (!succeeded && tx) {
@@ -675,7 +695,7 @@ export async function handleTransactionStatus(args: unknown) {
       hash,
       status: succeeded ? "success" : "reverted",
       block: Number(receipt.blockNumber),
-      confirmations: Number(latest - receipt.blockNumber + 1n),
+      confirmations: latest ? Number(latest - receipt.blockNumber + 1n) : null,
       from: receipt.from,
       to: receipt.to,
       gas_used: Number(receipt.gasUsed),

@@ -3,6 +3,16 @@
 All notable changes to `@gblin-protocol/mcp-server` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.2] - 2026-09-23
+
+### Fixed
+- `get_transaction_status` reported a transaction already mined as `pending`. The default public RPC refuses
+  every `eth_getTransactionReceipt` as an archive request, and the fallback it then used moves to the next
+  endpoint only on an error, while an endpoint a block behind answers "no receipt yet" without one. It now asks
+  each endpoint in turn until one returns the receipt. Found by running every tool against mainnet from a real
+  wallet, which a fork cannot show: a fork always serves receipts.
+- `confirmations` may be `null` when no endpoint answers the latest block number.
+
 ## [0.5.1] - 2026-09-23
 
 ### Fixed

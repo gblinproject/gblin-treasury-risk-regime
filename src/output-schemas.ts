@@ -225,7 +225,7 @@ export const OUTPUT_SCHEMAS: Record<string, JsonSchema> = {
     hash: str(),
     status: { type: "string", enum: ["pending", "not_found", "success", "reverted"] },
     block: num(),
-    confirmations: num(),
+    confirmations: { type: ["number", "null"] },
     from: str(),
     to: { type: ["string", "null"] },
     gas_used: num(),
