@@ -119,7 +119,8 @@ async function probeOne(url) {
   const g = await probeVerb(url, "GET");
   if (g.ok) return g;
   // POST-only route (or one that requires a body): exactly ONE retry with POST
-  if (g.code === 404 || g.code === 405 || g.code === 400 || g.code === 501) {
+  // Rule 2.3 adds 403 (API gateways answer an unrouted method with it) and a 402 whose challenge cannot be parsed.
+  if (g.code === 404 || g.code === 405 || g.code === 400 || g.code === 501 || g.code === 403 || g.code === 402) {
     const p = await probeVerb(url, "POST");
     if (p.ok) return p;
     return { code: p.code || g.code, ms: g.ms + p.ms, ok: false, via: null, get_code: g.code };
@@ -198,7 +199,7 @@ export async function catalogReport(env) {
   }
   return {
     what: "x402 catalog observatory (v1 beta) — factual liveness of the most recently updated Bazaar listings, probed in rotation. No payments are made by probes; no judgements, only measurements.",
-    alive_definition: "rule v2.2 (since 2026-09-24): answers within 8s with HTTP 402 + parseable accepts[] challenge read from the PAYMENT-REQUIRED header or the body (GET, one POST retry on 400/404/405/501), or any 2xx; a placeholder path that does not answer with a challenge is left out; a single probe with no HTTP answer is unconfirmed until repeated",
+    alive_definition: "rule v2.3 (since 2026-09-24): answers within 8s with HTTP 402 + parseable accepts[] challenge read from the PAYMENT-REQUIRED header or the body (GET, one POST retry on 400/402-without-challenge/403/404/405/501), or any 2xx; a placeholder path that does not answer with a challenge is left out; a single probe with no HTTP answer is unconfirmed until repeated",
     summary: summarize(state),
     our_own_listings: ours,
     full_feed: "per-endpoint detail (code, latency, last_ok, consecutive fails) is available as a paid x402 resource — see gblin.digital/api/x402/llms.txt",
@@ -222,20 +223,25 @@ export async function catalogFull(env, token) {
  * ──────────────────────────────────────────────────────────────────────────*/
 
 const METHODOLOGY = {
-  rule_version: "2.2",
+  rule_version: "2.3",
   rule_since: "2026-09-24",
   selection: "top ~200 resources by lastUpdated on the public CDP x402 discovery catalog, refreshed daily; GBLIN's own endpoints are always included and judged by the same rules",
-  probe: "GET, accept: application/json, 8s timeout, follow redirects; if the GET returns 400/404/405/501 (POST-only route) one POST retry with an empty JSON body; 17 endpoints are probed every 3 hours, so each endpoint is probed about every 36 hours",
+  probe: "GET, accept: application/json, 8s timeout, follow redirects; if the GET returns 400/402 without a parseable challenge/403/404/405/501 (a POST-only route) one POST retry with an empty JSON body; 17 endpoints are probed every 3 hours, so each endpoint is probed about every 36 hours",
   alive: "HTTP 402 whose challenge exposes a non-empty accepts[] array — read from the PAYMENT-REQUIRED header (base64 JSON, the x402 v2 form) or from the response body — or any 2xx, within the timeout",
   never: "probes never pay anyone, never judge quality — liveness only",
   changelog: [
     {
-      version: "2.2", from: "2026-09-24", to: null,
+      version: "2.3", from: "2026-09-24", to: null,
+      rule: "as v2.2, plus a GET answered with 403, or with 402 but no parseable challenge, also triggers the single POST retry",
+      correction: "found by a hand check the same day of the 14 not-alive results in a random sample of 400 of the 17,071 catalog listings: 3 of them (two answering 403 to GET, one answering 402 without a parseable challenge to GET) carried a valid challenge on POST.",
+    },
+    {
+      version: "2.2", from: "2026-09-24", to: "2026-09-24",
       rule: "as v2.1, plus: (a) a listing whose path keeps a route placeholder (/:name or {name}) counts as alive if it answers with a challenge and is otherwise left out, since a refused literal placeholder is not evidence that the service is down; (b) a probe that gets no HTTP answer at all (network error or timeout) is shown as unconfirmed and left out of the percentage until a second consecutive probe also gets none",
       correction: "hand check on 2026-09-24 of the 4 endpoints reported not alive out of 187: 3 had failed a single probe with no HTTP answer and, re-checked by hand from a separate network, answered with a valid 402 challenge; the 4th was a placeholder path (':symbol'). Also corrected: the probe cadence was published as 'roughly every 2 hours', while the cadence in force is 17 probes every 3 hours, about 36 hours per endpoint.",
     },
     {
-      version: "2.1", from: "2026-08-18", to: null,
+      version: "2.1", from: "2026-08-18", to: "2026-09-24",
       rule: "as v2, plus HTTP 501 added to the statuses that trigger the single POST retry (aligns with the independent cross-check method published by M. Oliva, x402 Slack, 2026-08-18)",
       correction: "no effect on the 201 endpoints tracked on 2026-08-18 (none returned 501); recorded so that the two methods are reproducibly identical on the verb-fallback rule.",
     },

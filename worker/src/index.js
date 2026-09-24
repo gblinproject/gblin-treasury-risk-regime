@@ -55,7 +55,7 @@ const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // Bumped on EVERY deploy. The authoritative identifier of the surface remains
 // manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.6" };
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.7" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
