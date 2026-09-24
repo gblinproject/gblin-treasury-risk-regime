@@ -207,11 +207,16 @@ export async function recentUsage(env, days = 14) {
   }
 
   // Historical source: the days written to KV before the move. Read only, never written.
+  // Read in parallel: sequential reads made a 60-day report take ~4 s cold, which timed out the
+  // site's fetch of this report. The keys are fixed and finite, so the fan-out is bounded by `days`.
   if (env.COHERENCE) {
-    for (let i = 0; i < days; i++) {
-      const day = utcDayKey(new Date(Date.now() - i * 86400_000));
-      let doc = null;
-      try { doc = JSON.parse((await env.COHERENCE.get(dayDocKey(day))) || "null"); } catch { doc = null; }
+    const dayKeys = Array.from({ length: days }, (_, i) => utcDayKey(new Date(Date.now() - i * 86400_000)));
+    const docs = await Promise.all(
+      dayKeys.map(async (day) => {
+        try { return [day, JSON.parse((await env.COHERENCE.get(dayDocKey(day))) || "null")]; } catch { return [day, null]; }
+      }),
+    );
+    for (const [day, doc] of docs) {
       if (!doc) continue;
       for (const [k, n] of Object.entries(doc)) add(day, k, n);
     }
