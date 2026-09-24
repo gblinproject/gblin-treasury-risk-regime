@@ -26,6 +26,7 @@
 
 import { catalogTick, catalogReport, catalogFull, observatoryPage, observatoryJson, observatoryBadge } from "./catalog.mjs";
 import { vmWatchDue, vmWatchTick, vmWatchTest } from "./vmwatch.mjs";
+import { legWatchTick } from "./legwatch.mjs";
 import { publishAuctionOrders, publisherStatus } from "./auctionpublisher.mjs";
 // Witness (./witness.mjs): cosigns the checkpoints of third-party transparency
 // logs (C2SP tlog-cosignature v1). Cost is one read plus one signature per tick,
@@ -54,7 +55,7 @@ const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // Bumped on EVERY deploy. The authoritative identifier of the surface remains
 // manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.3" };
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.6" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -1010,10 +1011,13 @@ async function callTool(rawName, env, args = {}, req = {}) {
     default: {
       const here = TOOLS.map((t) => t.name).join(", ");
       if (Object.prototype.hasOwnProperty.call(STDIO_ONLY_TOOLS, name)) {
+        const hint = STDIO_ONLY_TOOLS[name];
+        const where = hint.startsWith("removed")
+          ? `Unknown tool: "${name}" no longer exists, here or in the stdio npm package.`
+          : `Unknown tool here: "${name}" exists only in the stdio npm package @gblin-protocol/mcp-server ` +
+            `(run: npx @gblin-protocol/mcp-server).`;
         throw Object.assign(new Error(
-          `Unknown tool here: "${name}" exists only in the stdio npm package @gblin-protocol/mcp-server ` +
-          `(run: npx @gblin-protocol/mcp-server). This hosted server has ${TOOLS.length} tools: ${here}. ` +
-          `Closest equivalent: ${STDIO_ONLY_TOOLS[name]}.`), { code: -32602 });
+          `${where} This hosted server has ${TOOLS.length} tools: ${here}. Closest equivalent: ${hint}.`), { code: -32602 });
       }
       throw Object.assign(new Error(`Unknown tool: ${name}. Tools on this server: ${here}. Legacy names accepted: see GET /meta (legacy_tool_aliases).`), { code: -32602 });
     }
@@ -1920,6 +1924,10 @@ export default {
       await pushToWitnesses(env).catch((e) => console.error("witness push:", e && e.message));
       if (vmWatchDue()) {
         await vmWatchTick(env).catch((e) => console.error("vm watch:", e && e.message));
+      }
+      {
+        const rpcs = env.GBLIN_RPC_URL ? [env.GBLIN_RPC_URL, ...FALLBACK_RPCS] : FALLBACK_RPCS;
+        await legWatchTick(env, rpcs).catch((e) => console.error("leg watch:", e && e.message));
       }
       if (env.COHERENCE) {
         const today = utcDay();

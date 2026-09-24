@@ -106,6 +106,15 @@ async function probeVerb(url, method) {
   }
 }
 
+/**
+ * A listing whose path keeps a route placeholder (`/:symbol`, `{id}`) names no concrete resource. It is probed
+ * like any other; if it answers with a challenge it counts as alive, otherwise it is left out, because a
+ * refused literal placeholder says nothing about whether the service is up.
+ */
+export function isTemplate(url) {
+  try { return /\/:[A-Za-z_]|\{[^}/]+\}|%7B[^/]+%7D/i.test(new URL(url).pathname); } catch { return false; }
+}
+
 async function probeOne(url) {
   const g = await probeVerb(url, "GET");
   if (g.ok) return g;
@@ -189,7 +198,7 @@ export async function catalogReport(env) {
   }
   return {
     what: "x402 catalog observatory (v1 beta) — factual liveness of the most recently updated Bazaar listings, probed in rotation. No payments are made by probes; no judgements, only measurements.",
-    alive_definition: "rule v2 (since 2026-08-18): answers within 8s with HTTP 402 + parseable accepts[] challenge read from the PAYMENT-REQUIRED header or the body (GET, one POST retry on 400/404/405), or any 2xx",
+    alive_definition: "rule v2.2 (since 2026-09-24): answers within 8s with HTTP 402 + parseable accepts[] challenge read from the PAYMENT-REQUIRED header or the body (GET, one POST retry on 400/404/405/501), or any 2xx; a placeholder path that does not answer with a challenge is left out; a single probe with no HTTP answer is unconfirmed until repeated",
     summary: summarize(state),
     our_own_listings: ours,
     full_feed: "per-endpoint detail (code, latency, last_ok, consecutive fails) is available as a paid x402 resource — see gblin.digital/api/x402/llms.txt",
@@ -213,13 +222,18 @@ export async function catalogFull(env, token) {
  * ──────────────────────────────────────────────────────────────────────────*/
 
 const METHODOLOGY = {
-  rule_version: 2,
-  rule_since: "2026-08-18",
+  rule_version: "2.2",
+  rule_since: "2026-09-24",
   selection: "top ~200 resources by lastUpdated on the public CDP x402 discovery catalog, refreshed daily; GBLIN's own endpoints are always included and judged by the same rules",
-  probe: "GET, accept: application/json, 8s timeout, follow redirects; if the GET returns 400/404/405/501 (POST-only route) one POST retry with an empty JSON body; each endpoint is probed in rotation roughly every 2 hours",
+  probe: "GET, accept: application/json, 8s timeout, follow redirects; if the GET returns 400/404/405/501 (POST-only route) one POST retry with an empty JSON body; 17 endpoints are probed every 3 hours, so each endpoint is probed about every 36 hours",
   alive: "HTTP 402 whose challenge exposes a non-empty accepts[] array — read from the PAYMENT-REQUIRED header (base64 JSON, the x402 v2 form) or from the response body — or any 2xx, within the timeout",
   never: "probes never pay anyone, never judge quality — liveness only",
   changelog: [
+    {
+      version: "2.2", from: "2026-09-24", to: null,
+      rule: "as v2.1, plus: (a) a listing whose path keeps a route placeholder (/:name or {name}) counts as alive if it answers with a challenge and is otherwise left out, since a refused literal placeholder is not evidence that the service is down; (b) a probe that gets no HTTP answer at all (network error or timeout) is shown as unconfirmed and left out of the percentage until a second consecutive probe also gets none",
+      correction: "hand check on 2026-09-24 of the 4 endpoints reported not alive out of 187: 3 had failed a single probe with no HTTP answer and, re-checked by hand from a separate network, answered with a valid 402 challenge; the 4th was a placeholder path (':symbol'). Also corrected: the probe cadence was published as 'roughly every 2 hours', while the cadence in force is 17 probes every 3 hours, about 36 hours per endpoint.",
+    },
     {
       version: "2.1", from: "2026-08-18", to: null,
       rule: "as v2, plus HTTP 501 added to the statuses that trigger the single POST retry (aligns with the independent cross-check method published by M. Oliva, x402 Slack, 2026-08-18)",
@@ -236,11 +250,13 @@ const METHODOLOGY = {
 function fullRows(state) {
   // after a rule change only probes already re-run under the current rule count (no v1/v2 mixing)
   return Object.entries(state?.entries || {})
-    .filter(([, e]) => e.lastProbeAt && (e.rule || 1) === RULE_VERSION)
+    .filter(([u, e]) => e.lastProbeAt && (e.rule || 1) === RULE_VERSION && (e.ok || !isTemplate(u)))
     .map(([u, e]) => ({
       url: u,
       ours: u.startsWith(OUR_PREFIX),
       alive: !!e.ok,
+      // No HTTP answer at all on a single probe: not yet counted either way (rule 2.2).
+      unconfirmed: !e.ok && e.code === 0 && (e.fails || 0) < 2,
       http: e.code,
       latency_ms: e.ms,
       last_ok: e.lastOkAt ? new Date(e.lastOkAt).toISOString() : null,
@@ -256,15 +272,20 @@ export async function observatoryJson(env) {
   try { state = JSON.parse(await env.COHERENCE.get(STATE_KEY)); } catch { /* empty */ }
   try { list = JSON.parse(await env.COHERENCE.get(LIST_KEY)); } catch { /* empty */ }
   const inRotation = list?.urls?.length || Object.keys(state?.entries || {}).length;
-  const rows = fullRows(state).filter((r) => !list?.urls || list.urls.includes(r.url));
+  const listed = fullRows(state).filter((r) => !list?.urls || list.urls.includes(r.url));
+  const rows = listed.filter((r) => !r.unconfirmed);
+  const unconfirmed = listed.filter((r) => r.unconfirmed);
   const alive = rows.filter((r) => r.alive).length;
+  const templates = Object.entries(state?.entries || {})
+    .filter(([u, e]) => isTemplate(u) && e.lastProbeAt && !e.ok && (!list?.urls || list.urls.includes(u))).length;
   return {
     name: "GBLIN x402 Uptime Observatory",
     generated_at: new Date(state?.updatedAt || Date.now()).toISOString(),
     stable_url: "https://gblin-mcp.gblin-mcp-worker.workers.dev/observatory.json",
     methodology: METHODOLOGY,
-    summary: { tracked: rows.length, alive_now: alive, alive_pct: rows.length ? Math.round((1000 * alive) / rows.length) / 10 : 0, in_rotation: inRotation, note: rows.length < inRotation ? "rule change in progress: only endpoints already re-probed under the current rule are counted; the rest re-enter within ~3h" : undefined },
+    summary: { tracked: rows.length, alive_now: alive, alive_pct: rows.length ? Math.round((1000 * alive) / rows.length) / 10 : 0, in_rotation: inRotation, unconfirmed: unconfirmed.length, untestable_templates: templates, note: listed.length + templates < inRotation ? "endpoints that entered the list recently are counted after their first probe (a full rotation takes about 36 hours)" : undefined },
     endpoints: rows,
+    unconfirmed_endpoints: unconfirmed,
     free_market_risk_regime: "https://gblin-mcp.gblin-mcp-worker.workers.dev/regime",
     operator: "gblin.digital (ERC-8004 agent #59286 on Base) — our own endpoints appear in the table under the same rules",
     rerun_it_yourself: "https://github.com/gblinproject/x402-catalog-probe",
@@ -290,7 +311,7 @@ tr.ours{background:#fffbe8}.k{color:#555}.box{background:#f6f6f6;border-radius:8
 @media(prefers-color-scheme:dark){body{background:#111;color:#e6e6e6}td,th{border-color:#2c2c2c}tr.ours{background:#2a2410}.box{background:#1c1c1c}}</style></head><body>
 <h1>x402 Uptime Observatory</h1>
 <p class="k">Generated ${esc(d.generated_at)} · refreshed continuously · <a href="/observatory.json">raw JSON (stable URL)</a> · <a href="/observatory/badge.svg">badge</a></p>
-<p><b>${d.summary.alive_now} of ${d.summary.tracked}</b> tracked x402 resources answer right now — <b>${d.summary.alive_pct}%</b>. The rest did not answer under the pre-registered definition below (rule v${d.methodology.rule_version}, since ${d.methodology.rule_since}).</p>
+<p><b>${d.summary.alive_now} of ${d.summary.tracked}</b> tracked x402 resources answer right now — <b>${d.summary.alive_pct}%</b>.${d.summary.alive_now < d.summary.tracked ? " The rest did not answer" : " Measured"} under the pre-registered definition below (rule v${d.methodology.rule_version}, since ${d.methodology.rule_since}).${d.summary.unconfirmed ? ` Not counted: ${d.summary.unconfirmed} endpoint(s) with a single probe that got no HTTP answer, pending a second probe.` : ""}${d.summary.untestable_templates ? ` Not counted: ${d.summary.untestable_templates} listing(s) whose path is a placeholder and that refused it.` : ""}</p>
 <div class="box"><b>Method (pre-registered):</b> ${esc(d.methodology.selection)}. Probe: ${esc(d.methodology.probe)}. <b>Alive</b> = ${esc(d.methodology.alive)}. ${esc(d.methodology.never)}.</div>
 <div class="box"><b>Correction log.</b> ${d.methodology.changelog.map((c) => `<b>Rule v${c.version}</b> (${esc(c.from)} → ${esc(c.to)}): ${esc(c.rule)}. ${esc(c.correction)}`).join("<br>")}</div>
 <p class="k">Run by <a href="https://gblin.digital">GBLIN</a> (ERC-8004 agent #59286). Our own endpoints appear below under the same rules — highlighted, not exempted. The free on-chain market risk regime lives at <a href="/regime"><code>/regime</code></a>.</p>
