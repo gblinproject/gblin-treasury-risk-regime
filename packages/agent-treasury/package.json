@@ -7,19 +7,44 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
-  "bin": { "gblin-treasury": "dist/cli.js" },
-  "files": ["dist", "README.md", "CHANGELOG.md", "LICENSE"],
-  "engines": { "node": ">=20" },
+  "bin": {
+    "gblin-treasury": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepublishOnly": "npm run build",
     "test:fork": "tsx scripts/test-fork.ts"
   },
-  "repository": { "type": "git", "url": "https://github.com/gblinproject/gblin-treasury-risk-regime", "directory": "packages/agent-treasury" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gblinproject/gblin-treasury-risk-regime.git",
+    "directory": "packages/agent-treasury"
+  },
   "homepage": "https://gblin.digital/agents",
-  "keywords": ["x402", "base", "agent", "treasury", "usdc", "gblin", "agentkit", "mcp"],
+  "keywords": [
+    "x402",
+    "base",
+    "agent",
+    "treasury",
+    "usdc",
+    "gblin",
+    "agentkit",
+    "mcp"
+  ],
   "dependencies": {
     "@x402/core": "^2.27.0",
     "@x402/evm": "^2.27.0",
