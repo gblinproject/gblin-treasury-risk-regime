@@ -289,12 +289,12 @@ Pay-per-call data lives on HTTP, settled in USDC on Base through the Coinbase CD
 
 | Endpoint | Price | Returns |
 |---|---|---|
-| `GET gblin.digital/api/x402/treasury-state` | $0.001 | NAV, basket weights, Crash Shield status |
-| `GET gblin.digital/api/x402/quote` | $0.001 | Mint or redemption preview with the dynamic slippage buffer |
-| `GET gblin.digital/api/x402/governance` | $0.001 | Owner, timelock, pending operations |
-| `GET gblin.digital/api/x402/health` | $0.002 | Wallet balances, gas runway, allocation advice |
-| `GET gblin.digital/api/x402/invest` | $0.002 | Unsigned calldata: USDC → GBLIN |
-| `GET gblin.digital/api/x402/jit` | $0.005 | Unsigned calldata: GBLIN → USDC just in time |
+| `GET gblin.digital/api/x402/treasury-state` | free | NAV, basket weights, Crash Shield status |
+| `GET gblin.digital/api/x402/quote` | free | Mint or redemption preview with the dynamic slippage buffer |
+| `GET gblin.digital/api/x402/governance` | free | Owner, timelock, pending operations |
+| `GET gblin.digital/api/x402/health` | free | Wallet balances, gas runway, allocation advice |
+| `GET gblin.digital/api/x402/invest` | free | Unsigned calldata: USDC → GBLIN |
+| `GET gblin.digital/api/x402/jit` | free | Unsigned calldata: GBLIN → USDC just in time |
 | `GET gblin.digital/api/x402/attestation` | $0.003 | Signed EIP-712 Risk Attestation, valid ten minutes |
 | `POST gblin.digital/api/x402/seal` | $0.0045 | A sealed AI Action Receipt |
 

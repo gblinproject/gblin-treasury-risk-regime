@@ -29,8 +29,7 @@ async function getMarketRiskSignal(): Promise<{
 }> {
   const response = await fetch('https://gblin.digital/api/x402/treasury-state');
   const state = await response.json();
-  // Note: treasury-state is x402-paywalled at $0.001
-  // For free polling, parse the llms.txt at /api/x402/llms.txt
+  // treasury-state is free (no payment) and CDN-cached for 60 s.
 
   const affected = state.basket
     .filter((a: any) => a.dynamicWeight < a.weight)

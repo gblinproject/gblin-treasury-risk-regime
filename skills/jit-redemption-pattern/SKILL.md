@@ -29,7 +29,7 @@ Two deterministic steps (redeem, then swap), each with its own oracle-anchored m
 GET https://gblin.digital/api/x402/jit?wallet=<address>&usdc=<amount>
 ```
 
-Response (after x402 payment of $0.005 USDC):
+Response (free, no payment):
 
 ```json
 {
@@ -73,7 +73,7 @@ async function payInvoiceWithGblin(params: {
   const url = `${GBLIN_JIT}?wallet=${params.walletAddress}&usdc=${params.invoiceAmountUsdc}`;
   const response = await fetch(url);
   if (response.status === 402) {
-    throw new Error('JIT endpoint requires x402 payment of $0.005 USDC');
+    throw new Error('JIT endpoint unavailable');
   }
   const jit = await response.json();
 
@@ -96,8 +96,8 @@ The vault enforces a short redemption cooldown after a mint for oneself (20 seco
 
 ```typescript
 async function safeRedeem(walletAddress: string, amount: number) {
-  // /api/x402/health is an x402 endpoint: call it with an x402 client such as @x402/fetch.
-  const health = await fetchWithPayment(`https://gblin.digital/api/x402/health?wallet=${walletAddress}`);
+  // /api/x402/health is free: a plain fetch is enough.
+  const health = await fetch(`https://gblin.digital/api/x402/health?wallet=${walletAddress}`);
   const { cooldown } = await health.json();
 
   if (cooldown.active) {

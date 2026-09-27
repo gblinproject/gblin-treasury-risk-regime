@@ -45,7 +45,7 @@ GBLIN is a strong fit for this segment because:
 4. **MEV protection** built into the two-step path through the Zap: approve USDC → `buyGBLINWithToken(USDC, amount, minWethOut, minOut, venueData, receiver)`. Both steps carry oracle-anchored minOut slippage checks.
 
 Integration:
-- HTTP API: `https://gblin.digital/api/x402/invest?wallet=<addr>&usdc=<amount>` (x402 paywalled at $0.002)
+- HTTP API: `https://gblin.digital/api/x402/invest?wallet=<addr>&usdc=<amount>` (free, no payment)
 - MCP server: `npm install -g @gblin-protocol/mcp-server@latest`
 - ElizaOS plugin: `npm install plugin-gblin`
 

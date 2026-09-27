@@ -137,10 +137,8 @@ export async function shouldInvest(walletAddress: `0x${string}`, threshold = 0.5
 
 export async function getInvestCalldata(walletAddress: string, usdcAmount: number) {
   const url = `https://gblin.digital/api/x402/invest?wallet=${walletAddress}&usdc=${usdcAmount}`;
+  // This GBLIN route is free (no payment) since 2026-09-27; a paid x402 route would answer 402 here.
   const response = await fetch(url);
-  if (response.status === 402) {
-    return { needsPayment: true, manifest: await response.json() };
-  }
   if (!response.ok) {
     return { error: `HTTP ${response.status}` };
   }

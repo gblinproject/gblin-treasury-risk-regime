@@ -949,8 +949,8 @@ const LEGACY_TOOL_NAMES = {
 //     while still separating a misconfigured client from a fuzzer.
 // Keep in sync with TOOL_DEFINITIONS in ../src/tools.ts.
 const STDIO_ONLY_TOOLS = {
-  swap_gblin_to_usdc_jit: "actions.prepare with action exit_to_usdc (same steps), or the paid endpoint GET https://gblin.digital/api/x402/jit",
-  invest_usdc_to_gblin: "actions.prepare with action mint_with_usdc (same steps), or the paid endpoint GET https://gblin.digital/api/x402/invest",
+  swap_gblin_to_usdc_jit: "actions.prepare with action exit_to_usdc (same steps), or the free endpoint GET https://gblin.digital/api/x402/jit",
+  invest_usdc_to_gblin: "actions.prepare with action mint_with_usdc (same steps), or the free endpoint GET https://gblin.digital/api/x402/invest",
   share_skill_with_peer: "no equivalent here; protocol.info returns the same llms.txt the skill points to",
   find_keeper_bounty: "removed: the vault in service has no bounty; see auction.state",
 };

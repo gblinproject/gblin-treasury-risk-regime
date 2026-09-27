@@ -35,7 +35,9 @@ const OUTPUT = resolve(here, "../src/x402-challenge.mjs");
 const readFixture = (dir, file) => JSON.parse(readFileSync(`${dir}/${file}`, "utf8"));
 
 function webappEntries() {
-  const names = ["attestation", "catalog", "governance", "seal", "treasury-state", "quote", "jit", "invest", "health"];
+  // treasury-state, quote, jit, invest, health and governance are free since 2026-09-27: they have no
+  // challenge and their routing rules must be deleted BEFORE this module is regenerated and deployed.
+  const names = ["attestation", "catalog", "seal"];
   return names.map((name) => {
     const base = readFixture(WEBAPP, `${name}.json.json`);
     const entry = { key: `x402/${name}` };
@@ -50,7 +52,7 @@ function webappEntries() {
 }
 
 function sentinelEntries() {
-  const names = ["risk-pulse-pro", "base-risk-pulse", "gblin-analytics", "keeper-opps"];
+  const names = ["risk-pulse-pro", "base-risk-pulse"];
   return names.map((name) => {
     const base = readFixture(SENTINEL, `${name}.json.json`);
     if (base.status !== 402) throw new Error(`sentinel/${name}: expected 402, found ${base.status}`);
