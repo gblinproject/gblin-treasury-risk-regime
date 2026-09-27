@@ -50,6 +50,25 @@ Fees: 0.10% on every mint with ETH or WETH (0.05% stays in the vault and lifts t
 
 A stateless Streamable HTTP server runs at `https://gblin-mcp.gblin-mcp-worker.workers.dev/mcp` — no install, no auth, no session, 60 requests per minute per IP. It serves the vault, action and payment tools of this package under two-level names (`treasury.*`, `actions.*`, `payments.*`, `governance.state`, `auction.state`, `attestation.verify`), built from the same source, plus the risk, receipts and coherence tools; the snake_case names below are accepted there as aliases. GET-only audit surfaces: [`/meta`](https://gblin-mcp.gblin-mcp-worker.workers.dev/meta), [`/tools.json`](https://gblin-mcp.gblin-mcp-worker.workers.dev/tools.json), [`/resources.json`](https://gblin-mcp.gblin-mcp-worker.workers.dev/resources.json), [`/conformance`](https://gblin-mcp.gblin-mcp-worker.workers.dev/conformance). Also listed on [Smithery](https://smithery.ai/servers/gblin-protocol/mcp).
 
+## Agent treasury (library and CLI)
+
+`packages/agent-treasury` — npm `@gblin-protocol/agent-treasury`. Operating cash stays in USDC, the surplus above a
+reserve is parked in GBLIN, and USDC is pulled back from GBLIN just in time when an x402 invoice arrives. The x402 client is
+Coinbase's reference `x402Client` with the refill attached to its `onBeforePaymentCreation` hook, so a 402 for USDC on Base
+triggers the refill before the authorization is signed and a price above the cap is refused before anything is signed.
+Self-custody, no key leaves the process. Verified end to end on a fork of Base (24 checks: park, refill, cooldown, a
+mock invoice with the challenge bytes of gblin.digital and a verified EIP-712 signature, the cap).
+
+```bash
+export GBLIN_AGENT_PRIVATE_KEY=0x...
+npx @gblin-protocol/agent-treasury status --json
+npx @gblin-protocol/agent-treasury park --json
+npx @gblin-protocol/agent-treasury pay https://gblin.digital/api/x402/attestation --max-amount 3000 --json
+```
+
+The matching agent skill is `skills/gblin-agent-treasury` (`npx skills add gblinproject/gblin-treasury-risk-regime`).
+Details: [packages/agent-treasury/README.md](packages/agent-treasury/README.md).
+
 ## API
 
 ### Tools

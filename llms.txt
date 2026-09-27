@@ -32,6 +32,13 @@ NAV is computed from Chainlink oracle prices, fully on-chain and verifiable.
 - Treasury-health analysis, governance verification, and the state of the
   rebalancing auction with the bid to send.
 
+## Agent treasury (library and CLI)
+
+npm `@gblin-protocol/agent-treasury`: USDC reserve, surplus parked in GBLIN, just-in-time refill from GBLIN, and x402
+payments through Coinbase's x402Client with the refill on the onBeforePaymentCreation hook. CLI: `npx
+@gblin-protocol/agent-treasury status|park|ensure-usdc <amount>|pay <url>`. Skill: skills/gblin-agent-treasury
+(`npx skills add gblinproject/gblin-treasury-risk-regime`). Self-custody; verified on a fork of Base.
+
 ## Installation
 
 ```bash

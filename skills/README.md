@@ -30,10 +30,15 @@ Each skill is a folder with `SKILL.md` (YAML frontmatter + Markdown). At session
 | `erc8021-attribution` | User wants to add Builder Code referral attribution |
 | `earn-as-base-keeper` | User wants an agent that earns the auction premium on Base |
 | `risk-attestation` | User wants signed, portable proof-of-diligence for agent actions |
+| `gblin-agent-treasury` | User runs a self-custody agent treasury on Base: USDC reserve, surplus parked in GBLIN, just-in-time refill, x402 payments with automatic refill (CLI `@gblin-protocol/agent-treasury`) |
 
 ## Install
 
-Copy any skill folder into your project's `.claude/skills/` (or equivalent for your tool), or reference this repository in your `AGENTS.md`.
+```bash
+npx skills add gblinproject/gblin-treasury-risk-regime
+```
+
+or copy any skill folder into your project's `.claude/skills/` (or equivalent for your tool), or reference this repository in your `AGENTS.md`.
 
 ## Honesty Policy
 
