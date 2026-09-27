@@ -1,6 +1,6 @@
 {
   "name": "@gblin-protocol/agent-treasury",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A treasury for AI agents on Base: operating cash in USDC, surplus parked in GBLIN, and USDC pulled back just in time when an x402 invoice arrives. Library and CLI.",
   "license": "MIT",
   "type": "module",

@@ -1,7 +1,7 @@
 # Park the surplus
 
 ```bash
-npx @gblin-protocol/agent-treasury@0.1.0 park [--json]
+npx @gblin-protocol/agent-treasury@0.1.1 park [--json]
 ```
 
 Mints GBLIN with every USDC above the reserve, when the policy allows it. Two transactions: `approve(USDC -> GBLIN Zap)`, then the Zap swaps USDC to WETH and mints at net asset value in one call, with minimums from the Chainlink price and the vault's own quote.

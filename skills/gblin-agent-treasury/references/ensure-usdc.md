@@ -1,7 +1,7 @@
 # Ensure USDC
 
 ```bash
-npx @gblin-protocol/agent-treasury@0.1.0 ensure-usdc <amount> [--json]
+npx @gblin-protocol/agent-treasury@0.1.1 ensure-usdc <amount> [--json]
 ```
 
 Makes sure the wallet holds at least `<amount>` USDC (decimal, for example `2.50`). If it already does, nothing is sent (`action: "none"`). Otherwise the shortfall is redeemed from GBLIN in three transactions: `approve(GBLIN -> Zap)`, `Zap.sellGBLINForEth` (redeem in kind and sell every leg, all or nothing), then a Uniswap V3 swap of the ETH into USDC with the shortfall as the minimum output.

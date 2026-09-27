@@ -21,6 +21,8 @@ import { createTreasury, createTreasuryFetch, fromAccount } from "../src/index.j
 import { GBLIN_VAULT, USDC } from "../src/config.js";
 
 const RPC = process.env.GBLIN_RPC_URL ?? "http://127.0.0.1:8556";
+// The fork is the only endpoint: the public Base endpoints must never answer for a forked chain.
+process.env.GBLIN_RPC_URLS = RPC;
 const test = createTestClient({ chain: base, mode: "anvil", transport: http(RPC) }).extend(publicActions);
 
 let passed = 0;
@@ -91,6 +93,23 @@ async function main(): Promise<void> {
   const afterCooldown = await treasury.ensureUsdc(5);
   check("after the cooldown the exit goes through", afterCooldown.action === "exited" && Number(afterCooldown.usdcAfter) >= 5, JSON.stringify(afterCooldown).slice(0, 200));
 
+  // 5b. a lagging replica: a JSON-RPC proxy in front of the fork that serves state two blocks behind
+  //     the head (as load-balanced public endpoints do). The exit's "after" balances must come from an
+  //     endpoint that has the block of the receipt, never from the stale replica.
+  const lag = await startLaggingReplica(RPC, 2n);
+  process.env.GBLIN_RPC_URLS = `${lag.url},${RPC}`;
+  const lagged = createTreasury({ signer: fromAccount(account, RPC), rpcUrl: lag.url, policy: { reserveUsdc: 10, minParkUsdc: 5, maxExitUsdc: 50, maxPayUsdc: 1, riskGate: false }, log: (l) => log.push(l) });
+  await setUsdc(account.address, parseUnits("1", 6));
+  await test.mine({ blocks: 3 });
+  const viaLag = await lagged.ensureUsdc(3);
+  check("through a lagging replica the exit still reports the fresh balance", viaLag.action === "exited" && Number(viaLag.usdcAfter) >= 3, JSON.stringify(viaLag).slice(0, 220));
+  check("the result carries the block the balances were read at", typeof viaLag.block === "number" && viaLag.block > 0, String(viaLag.block));
+  check("the stale replica was asked first and refused the pinned block", lag.pinnedRefusals > 0, String(lag.pinnedRefusals));
+  const staleLatest = await createTreasury({ signer: fromAccount(account, RPC), rpcUrl: lag.url }).status();
+  check("the replica really lags: an unpinned read there is stale", Number(staleLatest.usdc) < 3, staleLatest.usdc);
+  lag.close();
+  process.env.GBLIN_RPC_URLS = RPC;
+
   // 6. an x402 invoice served by a local mock: real challenge bytes, amount 0.5 USDC, signature verified.
   const fixture = JSON.parse(readFileSync(new URL("../../../../GBLIN_WEBAPP/test/x402-golden/attestation.json.json", import.meta.url), "utf8")) as { body: string; headers: Record<string, string> };
   const challenge = JSON.parse(fixture.body) as { accepts: Array<Record<string, unknown>>; resource: Record<string, unknown> };
@@ -153,6 +172,51 @@ async function main(): Promise<void> {
   console.log(`\nlog lines: ${log.length}`);
   console.log(`=== ${passed} checks passed, ${failures.length} failed ===`);
   if (failures.length) { console.log("failed:", failures.join(" · ")); process.exit(1); }
+}
+
+/**
+ * A JSON-RPC proxy that answers like a replica `lagBlocks` behind the fork: `latest` reads are served
+ * at head - lag, reads pinned above its head fail with "header not found", and receipts of newer
+ * transactions are "not yet" (null). Everything else is forwarded unchanged.
+ */
+async function startLaggingReplica(upstream: string, lagBlocks: bigint): Promise<{ url: string; close: () => void; pinnedRefusals: number }> {
+  const state = { url: "", close: () => undefined as void, pinnedRefusals: 0 };
+  const forward = async (body: unknown): Promise<unknown> => {
+    const r = await fetch(upstream, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    return r.json();
+  };
+  const head = async (): Promise<bigint> => {
+    const r = (await forward({ jsonrpc: "2.0", id: 1, method: "eth_blockNumber", params: [] })) as { result: Hex };
+    return BigInt(r.result);
+  };
+  const server = createServer(async (req, res) => {
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    const msg = JSON.parse(raw) as { id: number; method: string; params: unknown[] };
+    const replicaHead = (await head()) - lagBlocks;
+    const reply = (result: unknown) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result })); };
+    const fail = (message: string) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, error: { code: -32000, message } })); };
+    if (msg.method === "eth_blockNumber") return reply(toHex(replicaHead));
+    if (msg.method === "eth_call" || msg.method === "eth_getBalance") {
+      const params = [...msg.params];
+      const tag = params[params.length - 1];
+      if (typeof tag === "string" && tag.startsWith("0x") && BigInt(tag) > replicaHead) { state.pinnedRefusals += 1; return fail("header not found"); }
+      if (tag === "latest" || tag === "pending") params[params.length - 1] = toHex(replicaHead);
+      const out = (await forward({ ...msg, params })) as { result?: unknown; error?: { message: string } };
+      return out.error ? fail(out.error.message) : reply(out.result);
+    }
+    if (msg.method === "eth_getTransactionReceipt") {
+      const out = (await forward(msg)) as { result?: { blockNumber: Hex } | null };
+      if (out.result && BigInt(out.result.blockNumber) > replicaHead) return reply(null);
+      return reply(out.result ?? null);
+    }
+    const out = (await forward(msg)) as { result?: unknown; error?: { message: string } };
+    return out.error ? fail(out.error.message) : reply(out.result);
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  state.url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  state.close = () => { server.close(); };
+  return state;
 }
 
 main().catch((err) => { console.error("error:", err); process.exit(1); });

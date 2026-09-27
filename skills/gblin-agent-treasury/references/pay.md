@@ -1,7 +1,7 @@
 # Pay an x402 endpoint from the treasury
 
 ```bash
-npx @gblin-protocol/agent-treasury@0.1.0 pay <url> [-X <method>] [-d <json>] [--max-amount <atomic USDC>] [--json]
+npx @gblin-protocol/agent-treasury@0.1.1 pay <url> [-X <method>] [-d <json>] [--max-amount <atomic USDC>] [--json]
 ```
 
 The request is sent; on a 402 the client (Coinbase's reference `x402Client`, EVM "exact" scheme) reads the price. If the wallet's USDC is short, the shortfall is refilled from GBLIN **before** the authorization is signed; if the price is above the cap, the payment is refused **before** anything is signed. Then the paid request is retried with the signed authorization; `paymentResponse` in the output is the settlement header.
@@ -24,7 +24,7 @@ The request is sent; on a 402 the client (Coinbase's reference `x402Client`, EVM
 ## Example
 
 ```bash
-npx @gblin-protocol/agent-treasury@0.1.0 pay https://gblin.digital/api/x402/attestation --max-amount 3000 --json
+npx @gblin-protocol/agent-treasury@0.1.1 pay https://gblin.digital/api/x402/attestation --max-amount 3000 --json
 ```
 
 Pays 0.003 USDC for a signed market-risk attestation (regime, severity, expiry), refilling USDC from GBLIN first if needed.

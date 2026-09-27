@@ -49,6 +49,14 @@ export const PUBLIC_RPCS = [
  * and needs a limit above 1,013,000. On Base the unused part of the limit costs nothing.
  */
 export const ZAP_GAS_LIMIT = 1_100_000n;
+/**
+ * Explicit limits for the approve and swap steps too, so no step depends on a gas estimate. An
+ * estimate is computed against the state of whichever replica answers, and right after the previous
+ * step that replica may not have seen it yet. Measured: approve ~29,000, swap ~118,000. On Base the
+ * unused part of a limit costs nothing.
+ */
+export const APPROVE_GAS_LIMIT = 80_000n;
+export const SWAP_GAS_LIMIT = 300_000n;
 
 /** ERC-8021 builder code appended to every transaction we send (Base Builder Rewards attribution). */
 export const BUILDER_CODE_SUFFIX = "62635f6762646f33326a300b0080218021802180218021802180218021";

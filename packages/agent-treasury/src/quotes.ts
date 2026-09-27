@@ -88,11 +88,13 @@ export interface Balances {
   eth: bigint;
 }
 
-export async function readBalances(client: PublicClient, wallet: Address): Promise<Balances> {
+/** Balances of the wallet; pass `blockNumber` to pin the read to a block (see `readAtBlock`). */
+export async function readBalances(client: PublicClient, wallet: Address, blockNumber?: bigint): Promise<Balances> {
+  const at = blockNumber === undefined ? {} : { blockNumber };
   const [usdc, gblin, eth] = await Promise.all([
-    client.readContract({ address: USDC, abi: ERC20_ABI, functionName: "balanceOf", args: [wallet] }),
-    client.readContract({ address: GBLIN_VAULT, abi: VAULT_ABI, functionName: "balanceOf", args: [wallet] }),
-    client.getBalance({ address: wallet }),
+    client.readContract({ address: USDC, abi: ERC20_ABI, functionName: "balanceOf", args: [wallet], ...at }),
+    client.readContract({ address: GBLIN_VAULT, abi: VAULT_ABI, functionName: "balanceOf", args: [wallet], ...at }),
+    client.getBalance({ address: wallet, ...at }),
   ]);
   return { usdc, gblin, eth };
 }
@@ -102,6 +104,14 @@ export async function readBalances(client: PublicClient, wallet: Address): Promi
  * read: the caller decides what to do without it (this library skips parking, never exits).
  */
 export async function readRegime(timeoutMs = 6_000): Promise<{ regime: Regime; source: string }> {
+  const first = await readRegimeOnce(timeoutMs);
+  if (first.regime !== "unknown") return first;
+  // One more try: a transient network failure must not look like a market condition.
+  await new Promise((res) => setTimeout(res, 800));
+  return readRegimeOnce(timeoutMs);
+}
+
+async function readRegimeOnce(timeoutMs: number): Promise<{ regime: Regime; source: string }> {
   try {
     const res = await fetch(REGIME_URL, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
     if (!res.ok) return { regime: "unknown", source: `${REGIME_URL} answered ${res.status}` };

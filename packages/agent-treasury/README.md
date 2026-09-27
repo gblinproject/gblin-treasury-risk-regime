@@ -47,7 +47,7 @@ npx @gblin-protocol/agent-treasury ensure-usdc 2.50 --json
 npx @gblin-protocol/agent-treasury pay https://gblin.digital/api/x402/attestation --max-amount 3000 --json
 ```
 
-`run` is `park` under another name, for a scheduler. Policy overrides: `GBLIN_RESERVE_USDC`, `GBLIN_MIN_PARK_USDC`, `GBLIN_MAX_EXIT_USDC`, `GBLIN_MAX_PAY_USDC`, `GBLIN_MIN_GAS_ETH`, `GBLIN_RISK_GATE=false`. `GBLIN_RPC_URL` sets a preferred RPC endpoint; public endpoints are tried after it.
+`run` is `park` under another name, for a scheduler. Policy overrides: `GBLIN_RESERVE_USDC`, `GBLIN_MIN_PARK_USDC`, `GBLIN_MAX_EXIT_USDC`, `GBLIN_MAX_PAY_USDC`, `GBLIN_MIN_GAS_ETH`, `GBLIN_RISK_GATE=false`. `GBLIN_RPC_URL` sets a preferred RPC endpoint; public endpoints are tried after it. `GBLIN_RPC_URLS` (comma-separated) replaces the public list. Balances reported after a move are read at the block of the last receipt, from an endpoint that has that block, so a lagging replica cannot report a stale result.
 
 ## Policy
 

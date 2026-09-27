@@ -8,10 +8,10 @@
 
 import { formatUnits, parseUnits, type Address, type Hex, type PublicClient } from "viem";
 
-import { makeClient, waitForReceipt } from "./chain.js";
+import { makeClient, readAtBlock, waitForReceipt } from "./chain.js";
 import { VAULT_ABI } from "./abi.js";
 import { GBLIN_VAULT } from "./config.js";
-import { readBalances, readCooldown, readPrices, readRegime, type Regime } from "./quotes.js";
+import { readBalances, readCooldown, readPrices, readRegime, type Balances, type Regime } from "./quotes.js";
 import { planExitToUsdc, planMintFromUsdc, type Step } from "./steps.js";
 import type { TreasurySigner } from "./signer.js";
 
@@ -73,6 +73,8 @@ export interface MoveResult {
   gblinBefore: string;
   gblinAfter: string;
   txHashes: Hex[];
+  /** Block of the last confirmed transaction; the "after" balances were read at that block. */
+  block: number | null;
 }
 
 export class Treasury {
@@ -159,7 +161,7 @@ export class Treasury {
     const before = await readBalances(this.client, this.address);
     const base = { usdcBefore: formatUnits(before.usdc, 6), gblinBefore: formatUnits(before.gblin, 18) };
     if (before.usdc >= target) {
-      return { action: "none", reason: "USDC already covers the amount", ...base, usdcAfter: base.usdcBefore, gblinAfter: base.gblinBefore, txHashes: [] };
+      return { action: "none", reason: "USDC already covers the amount", ...base, usdcAfter: base.usdcBefore, gblinAfter: base.gblinBefore, txHashes: [], block: null };
     }
     const shortfall = target - before.usdc;
     const cap = parseUnits(String(this.policy.maxExitUsdc), 6);
@@ -169,12 +171,12 @@ export class Treasury {
     if (cooldown.active) throw new Error(`The redemption cooldown after this wallet's own mint is active for ${cooldown.secondsRemaining} more seconds; retry then.`);
     const plan = await planExitToUsdc(this.client, this.address, shortfall, before.gblin);
     this.log(`exit: selling ${formatUnits(plan.sharesToSell, 18)} GBLIN for at least ${formatUnits(shortfall, 6)} USDC (NAV ${plan.navUsd.toFixed(4)} USD, buffer ${plan.slippageBps} bps)`);
-    const hashes = await this.send(plan.steps);
-    const after = await readBalances(this.client, this.address);
+    const { hashes, block } = await this.send(plan.steps);
+    const after = await this.balancesAt(block);
     if (after.usdc < target) {
-      throw new Error(`The exit confirmed but USDC is ${formatUnits(after.usdc, 6)}, below the ${formatUnits(target, 6)} needed. Transactions: ${hashes.join(", ")}`);
+      throw new Error(`All ${hashes.length} transactions confirmed (block ${block}) but USDC read at that block is ${formatUnits(after.usdc, 6)}, below the ${formatUnits(target, 6)} needed. Do not repeat the exit blindly; check the wallet on basescan.org. Transactions: ${hashes.join(", ")}`);
     }
-    return { action: "exited", reason: `USDC was short by ${formatUnits(shortfall, 6)}`, ...base, usdcAfter: formatUnits(after.usdc, 6), gblinAfter: formatUnits(after.gblin, 18), txHashes: hashes };
+    return { action: "exited", reason: `USDC was short by ${formatUnits(shortfall, 6)}`, ...base, usdcAfter: formatUnits(after.usdc, 6), gblinAfter: formatUnits(after.gblin, 18), txHashes: hashes, block: Number(block) };
   }
 
   private async parkNow(): Promise<MoveResult> {
@@ -187,25 +189,32 @@ export class Treasury {
     const usdc = Number(base.usdcBefore);
     const surplus = Math.max(0, usdc - this.policy.reserveUsdc);
     const gate = this.parkGate({ surplus, eth: Number(formatUnits(before.eth, 18)), regime: regime.regime, navReliable });
-    if (!gate.ok) return { action: "none", reason: gate.reason, ...base, usdcAfter: base.usdcBefore, gblinAfter: base.gblinBefore, txHashes: [] };
+    if (!gate.ok) return { action: "none", reason: gate.reason, ...base, usdcAfter: base.usdcBefore, gblinAfter: base.gblinBefore, txHashes: [], block: null };
     const amount = parseUnits(surplus.toFixed(6), 6);
     const plan = await planMintFromUsdc(this.client, this.address, amount);
     this.log(`park: minting GBLIN with ${surplus.toFixed(6)} USDC (at least ${formatUnits(plan.minSharesOut, 18)} shares, buffer ${plan.slippageBps} bps)`);
-    const hashes = await this.send(plan.steps);
-    const after = await readBalances(this.client, this.address);
-    return { action: "parked", reason: gate.reason, ...base, usdcAfter: formatUnits(after.usdc, 6), gblinAfter: formatUnits(after.gblin, 18), txHashes: hashes };
+    const { hashes, block } = await this.send(plan.steps);
+    const after = await this.balancesAt(block);
+    return { action: "parked", reason: gate.reason, ...base, usdcAfter: formatUnits(after.usdc, 6), gblinAfter: formatUnits(after.gblin, 18), txHashes: hashes, block: Number(block) };
   }
 
-  private async send(steps: Step[]): Promise<Hex[]> {
+  /** Balances read at `block`, from an endpoint that has it (a lagging replica would return old values). */
+  private balancesAt(block: bigint): Promise<Balances> {
+    return readAtBlock(this.rpcUrl, block, (c, b) => readBalances(c, this.address, b));
+  }
+
+  private async send(steps: Step[]): Promise<{ hashes: Hex[]; block: bigint }> {
     const hashes: Hex[] = [];
+    let block = 0n;
     for (const step of steps) {
       const hash = await this.signer.sendTransaction({ to: step.to, data: step.data, value: step.value, ...(step.gas ? { gas: step.gas } : {}) });
       this.log(`sent: ${step.description} -> ${hash}`);
       const receipt = await waitForReceipt(this.rpcUrl, hash);
       if (receipt.status !== "success") throw new Error(`Step "${step.description}" reverted: ${hash}`);
       hashes.push(hash);
+      if (receipt.blockNumber > block) block = receipt.blockNumber;
     }
-    return hashes;
+    return { hashes, block };
   }
 }
 

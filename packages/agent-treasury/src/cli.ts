@@ -88,7 +88,7 @@ async function main(): Promise<number> {
     if (!address || !isAddress(address)) throw new Error("Set GBLIN_AGENT_PRIVATE_KEY, or GBLIN_AGENT_ADDRESS for a read-only status.");
     const client = makeClient(process.env.GBLIN_RPC_URL);
     const [b, p, r] = await Promise.all([readBalances(client, address as Address), readPrices(client), readRegime()]);
-    const payload = { address, usdc: formatUnits(b.usdc, 6), gblin: formatUnits(b.gblin, 18), eth: formatUnits(b.eth, 18), navUsd: p.navUsd.toFixed(4), regime: r.regime, readOnly: true };
+    const payload = { address, usdc: formatUnits(b.usdc, 6), gblin: formatUnits(b.gblin, 18), eth: formatUnits(b.eth, 18), navUsd: p.navUsd.toFixed(4), regime: r.regime, regimeSource: r.source, readOnly: true };
     out(json, payload, [`address ${address}`, `USDC ${payload.usdc}`, `GBLIN ${payload.gblin} (NAV ${payload.navUsd} USD)`, `ETH ${payload.eth}`, `regime ${r.regime}`]);
     return 0;
   }

@@ -3,12 +3,12 @@ name: gblin-agent-treasury
 description: "Run a self-custody treasury for an AI agent on Base with the gblin-treasury CLI: keep operating cash in USDC, park the surplus in GBLIN (an on-chain cbBTC/WETH/USDC index with a crash-shield rule), refill USDC from GBLIN just in time, and pay x402 invoices with automatic refill. Use whenever the user mentions idle USDC, agent treasury, parking or investing surplus, running out of USDC for x402 payments, refilling USDC, treasury status, reserve, runway, or paying an x402 endpoint from a treasury."
 user-invocable: true
 disable-model-invocation: false
-allowed-tools: ["Bash(npx @gblin-protocol/agent-treasury@0.1.0 *)", "Bash(npm *)", "Bash(node *)", "Bash(curl *)"]
+allowed-tools: ["Bash(npx @gblin-protocol/agent-treasury@0.1.1 *)", "Bash(npm *)", "Bash(node *)", "Bash(curl *)"]
 ---
 
 # GBLIN Agent Treasury
 
-Operate the treasury through the `gblin-treasury` CLI (`npx @gblin-protocol/agent-treasury@0.1.0`). This skill is a router: read the reference in `references/` for the task at hand before acting.
+Operate the treasury through the `gblin-treasury` CLI (`npx @gblin-protocol/agent-treasury@0.1.1`). This skill is a router: read the reference in `references/` for the task at hand before acting.
 
 The policy in one sentence: operating cash stays in USDC, the surplus above the reserve is parked in GBLIN, and USDC is pulled back from GBLIN just in time when a payment needs it. GBLIN is a volatile index, not a stablecoin substitute.
 
@@ -17,7 +17,7 @@ The policy in one sentence: operating cash stays in USDC, the surplus above the 
 Every command except a read-only `status` needs the agent's private key in `GBLIN_AGENT_PRIVATE_KEY`. Check the state first:
 
 ```bash
-npx @gblin-protocol/agent-treasury@0.1.0 status --json
+npx @gblin-protocol/agent-treasury@0.1.1 status --json
 ```
 
 If it fails with `GBLIN_AGENT_PRIVATE_KEY must be…`, read `references/setup.md`.

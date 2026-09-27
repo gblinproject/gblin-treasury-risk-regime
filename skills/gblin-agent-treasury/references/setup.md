@@ -9,6 +9,7 @@ The CLI signs with the agent's own wallet. Nothing is custodied.
 | `GBLIN_AGENT_PRIVATE_KEY` | for park, ensure-usdc, pay, run | 0x-prefixed 32-byte hex key of the agent wallet on Base |
 | `GBLIN_AGENT_ADDRESS` | for a read-only `status` without a key | wallet address to read |
 | `GBLIN_RPC_URL` | no | preferred Base RPC endpoint; public endpoints are tried after it |
+| `GBLIN_RPC_URLS` | no | comma-separated list that replaces the public endpoints (own infrastructure, or a fork) |
 | `GBLIN_RESERVE_USDC` | no | USDC kept liquid (default 10) |
 | `GBLIN_MIN_PARK_USDC` | no | smallest surplus worth parking (default 5) |
 | `GBLIN_MAX_EXIT_USDC` | no | largest single refill (default 50) |
@@ -25,7 +26,7 @@ The reserve is the USDC the agent may need before the next refill can run: at le
 ## Verify
 
 ```bash
-npx @gblin-protocol/agent-treasury@0.1.0 status --json
+npx @gblin-protocol/agent-treasury@0.1.1 status --json
 ```
 
 Expected: a JSON object with `usdc`, `gblin`, `eth`, `navUsd`, `regime`, `canPark` and `canParkReason`.

@@ -7,7 +7,7 @@
 import { encodeAbiParameters, encodeFunctionData, parseUnits, type Address, type Hex, type PublicClient } from "viem";
 
 import { ERC20_ABI, LENS_ABI, SWAP_ROUTER_ABI, VAULT_ABI, ZAP_ABI } from "./abi.js";
-import { BPS, BUILDER_CODE_SUFFIX, GBLIN_LENS, GBLIN_VAULT, GBLIN_ZAP, SWAP_ROUTER_02, USDC, WETH, WETH_USDC_POOL_FEE, ZAP_GAS_LIMIT } from "./config.js";
+import { BPS, BUILDER_CODE_SUFFIX, GBLIN_LENS, GBLIN_VAULT, GBLIN_ZAP, SWAP_ROUTER_02, USDC, WETH, WETH_USDC_POOL_FEE, ZAP_GAS_LIMIT, APPROVE_GAS_LIMIT, SWAP_GAS_LIMIT } from "./config.js";
 import { readPrices, slippageBps, withBuffer } from "./quotes.js";
 
 export interface Step {
@@ -64,6 +64,7 @@ export async function planExitToUsdc(client: PublicClient, wallet: Address, usdc
       to: GBLIN_VAULT,
       data: withBuilderCode(encodeFunctionData({ abi: VAULT_ABI, functionName: "approve", args: [GBLIN_ZAP, shares] })),
       value: 0n,
+      gas: APPROVE_GAS_LIMIT,
     },
     {
       description: "Redeem in kind and sell every leg for ETH through the Zap (all or nothing)",
@@ -81,6 +82,7 @@ export async function planExitToUsdc(client: PublicClient, wallet: Address, usdc
         args: [{ tokenIn: WETH, tokenOut: USDC, fee: WETH_USDC_POOL_FEE, recipient: wallet, amountIn: minEthOut, amountOutMinimum: usdcTarget, sqrtPriceLimitX96: 0n }],
       }),
       value: minEthOut,
+      gas: SWAP_GAS_LIMIT,
     },
   ];
   return { steps, sharesToSell: shares, minEthOut, minUsdcOut: usdcTarget, expectedUsdcOut: gross, navUsd: prices.navUsd, slippageBps: bps };
@@ -110,6 +112,7 @@ export async function planMintFromUsdc(client: PublicClient, wallet: Address, us
       to: USDC,
       data: withBuilderCode(encodeFunctionData({ abi: ERC20_ABI, functionName: "approve", args: [GBLIN_ZAP, usdcIn] })),
       value: 0n,
+      gas: APPROVE_GAS_LIMIT,
     },
     {
       description: "Swap USDC to WETH and mint GBLIN at NAV, in one transaction",

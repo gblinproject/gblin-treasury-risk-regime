@@ -1,7 +1,7 @@
 # Status
 
 ```bash
-npx @gblin-protocol/agent-treasury@0.1.0 status [--json]
+npx @gblin-protocol/agent-treasury@0.1.1 status [--json]
 ```
 
 Reads, live from Base: the wallet's USDC, GBLIN and ETH; the NAV of one GBLIN in USD; the surplus above the reserve; the market regime (`calm`, `elevated`, `crash`, or `unknown` when the free regime endpoint cannot be read); the redemption cooldown in seconds; whether the vault currently prices itself; and `canPark` with `canParkReason`.
