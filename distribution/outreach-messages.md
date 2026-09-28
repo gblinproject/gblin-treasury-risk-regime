@@ -22,11 +22,11 @@ numbers, no unverifiable "first/only" claims.
 **Subject:** Indexing request + a reputation input Kompass doesn't have yet
 
 Hi — Kompass ranks agents across 12 registries with Bayesian reputation, which is
-exactly where a verifiable diligence signal belongs. GBLIN publishes 11 x402
-endpoints on Base (risk regime, treasury state, MEV-safe swap calldata, keeper
-bounties), all discoverable from our manifest and agent card below.
+exactly where a verifiable diligence signal belongs. GBLIN publishes agent
+endpoints on Base (risk regime, treasury state, swap calldata, signed attestations),
+all discoverable from our manifest and agent card below.
 
-Two concrete asks. First: index our 11 endpoints from the manifest. Second, the
+Two concrete asks. First: index our endpoints from the manifest. Second, the
 interesting one: consider "carries a fresh GBLIN Risk Attestation" as a
 reputation input. It's a perishable (10-minute TTL), EIP-712-signed snapshot of
 the on-chain BTC/ETH risk regime that an agent mints for $0.003 and attaches to
@@ -120,7 +120,7 @@ Happy to write the showcase copy to your format.
 Hi — your copilot routes deposits across Base yield; our protocol publishes the
 missing context for that decision: a live BTC/ETH risk regime (calm / elevated /
 crash), computed on-chain from Chainlink price drawdown on Base and readable by
-any agent via x402 ($0.001–$0.003 per call, 11 endpoints total).
+any agent for free, with a signed attestation at $0.003 via x402.
 
 The concrete ask: show the current regime on your allocation screen, and require
 a fresh GBLIN Risk Attestation (10-minute TTL, EIP-712-signed, free to verify

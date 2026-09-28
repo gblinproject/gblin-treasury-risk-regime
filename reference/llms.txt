@@ -81,7 +81,7 @@ async function autoInvest(walletAddress: string, idleUsdc: number, threshold = 0
   const url = `${GBLIN_API}/invest?wallet=${walletAddress}&usdc=${investAmount}`;
   const response = await fetch(url);
   if (response.status === 402) {
-    // x402 payment required: pay $0.002 USDC via EIP-3009, retry
+    // the invest endpoint is free: a 402 here means the URL is wrong or the deployment changed
     return { needsPayment: true, manifest: await response.json() };
   }
   return await response.json();

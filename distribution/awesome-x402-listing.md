@@ -13,11 +13,12 @@ How: fork → add the bullet(s) below to the most relevant section → open a PR
 
 Under **Services / Live endpoints** (crypto & DeFi data):
 
-- **[GBLIN Protocol](https://gblin.digital/agents)** — Risk & treasury API for agents on Base. On-chain BTC/ETH **risk regime** signal (calm/elevated/crash) and a perishable, EIP-712-verifiable **Risk Attestation** an agent attaches to its actions as proof-of-diligence. Also: NAV/treasury state, MEV-safe swap calldata, JIT GBLIN→USDC for paying x402 invoices, and keeper bounties that *pay* agents. $0.001–$0.005 USDC/call. Machine index: `https://gblin.digital/api/x402/llms.txt` · OpenAPI: `https://gblin.digital/openapi.json`
+- **[GBLIN Protocol](https://gblin.digital/agents)** — Risk & treasury API for agents on Base. On-chain BTC/ETH **risk regime** signal (calm/elevated/crash) and a perishable, EIP-712-verifiable **Risk Attestation** an agent attaches to its actions as proof-of-diligence. Free: NAV/treasury state, quotes, wallet health and calldata to move USDC into GBLIN or back out just in time for an x402 invoice. Paid: the signed attestation ($0.003), AI action receipts ($0.0045) and x402 liveness reports ($0.005). Machine index: `https://gblin.digital/api/x402/llms.txt` · OpenAPI: `https://gblin.digital/openapi.json`
 
 Under **MCP servers** (if the list has that section):
 
-- **[@gblin-protocol/mcp-server](https://www.npmjs.com/package/@gblin-protocol/mcp-server)** — 10 tools for Base treasury + risk. Free `verify_risk_attestation` (verify a peer's proof-of-diligence), free swap/quote calldata, paid `get_market_risk_regime` and `analyze_treasury_health`. `npx @gblin-protocol/mcp-server`.
+- **[@gblin-protocol/mcp-server](https://www.npmjs.com/package/@gblin-protocol/mcp-server)** — 20 tools for Base treasury + risk, all free: risk regime, `verify_risk_attestation`, quotes, calldata with simulation, transaction status, payments in GBLIN by signature. `npx @gblin-protocol/mcp-server`; hosted: `https://gblin-mcp.gblin-mcp-worker.workers.dev/mcp`.
+- **[@gblin-protocol/agent-treasury](https://www.npmjs.com/package/@gblin-protocol/agent-treasury)** — Keeps an agent's cash in USDC and its surplus in GBLIN; refills USDC before an x402 payment is signed (hook on Coinbase's `x402Client`).
 
 ---
 

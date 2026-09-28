@@ -30,7 +30,8 @@ Section: **Web3 / Payments / Treasury** (or the closest existing section):
 - **[crash-shield-risk-management](https://github.com/gblinproject/gblin-treasury-risk-regime/tree/main/skills/crash-shield-risk-management)** — React to market crashes using an on-chain BTC/ETH drawdown signal as a public bear-market indicator.
 - **[jit-redemption-pattern](https://github.com/gblinproject/gblin-treasury-risk-regime/tree/main/skills/jit-redemption-pattern)** — Just-in-time GBLIN→USDC conversion for outgoing payments, including cooldown timing inside x402 flows.
 - **[erc8021-attribution](https://github.com/gblinproject/gblin-treasury-risk-regime/tree/main/skills/erc8021-attribution)** — Add ERC-8021 Builder Code referral attribution to Base transactions: code format, registration, revenue-share semantics.
-- **[earn-as-base-keeper](https://github.com/gblinproject/gblin-treasury-risk-regime/tree/main/skills/earn-as-base-keeper)** — Earn ETH keeper bounties on Base by executing rebalance jobs — a service that pays agents instead of charging them.
+- **[earn-as-base-keeper](https://github.com/gblinproject/gblin-treasury-risk-regime/tree/main/skills/earn-as-base-keeper)** — Fill GBLIN's rebalancing Dutch auction on Base: read its state, size a bid, and send it when the premium covers the cost.
+- **[gblin-agent-treasury](https://github.com/gblinproject/gblin-treasury-risk-regime/tree/main/skills/gblin-agent-treasury)** — Run an agent treasury on Base: USDC reserve, surplus parked in GBLIN, USDC refilled before x402 payments.
 - **[risk-attestation](https://github.com/gblinproject/gblin-treasury-risk-regime/tree/main/skills/risk-attestation)** — Mint and verify perishable, EIP-712-signed proof that an agent checked market risk before moving capital.
 
 ## Install (include in the PR if the list has an install column/section)
