@@ -108,6 +108,16 @@ Details: [packages/agent-treasury/README.md](packages/agent-treasury/README.md).
     - `wallet_address` (string)
     - `daily_burn_usd` (number, optional): average daily spend, enables the runway estimate
 
+- **plan_treasury**
+  - Idle USDC to a reviewable plan in one call: the operating cash to keep liquid (`max(reserve_usd, daily_burn_usd × days)`), the surplus above it, a simulation of minting that surplus at NAV with every fee read live and the estimated value of exiting the same position today (round-trip cost included), the same simulation for a trial amount, the blockers (crash shield, cooldown, ETH for the exit) and the tools to call after a human confirms. Reads only; nothing is executed and nothing is advised
+  - Inputs:
+    - `wallet_address` (string)
+    - `daily_burn_usd` (number, optional): average daily spend in USD
+    - `days` (number, optional): days of spend to keep liquid, default 7
+    - `reserve_usd` (number, optional): USD to keep liquid regardless of the burn rate; one of `daily_burn_usd` or `reserve_usd` is required
+    - `trial_usdc` (number, optional): trial amount to simulate beside the surplus, default 100
+  - The same plan is served over HTTP at `https://gblin.digital/api/x402/plan`
+
 - **get_governance_state**
   - Owner and pending owner of the vault, the fee recipient, the timelock's minimum delay and roles, and, when the pending owner is the timelock, the deterministic id and state of the scheduled `acceptOwnership` operation
   - Inputs:

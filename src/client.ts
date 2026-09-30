@@ -5,18 +5,20 @@
  * it only reads state and builds calldata for the agent's wallet to execute.
  */
 
-import { createPublicClient, http } from "viem";
+import { createPublicClient, fallback, http, type PublicClient, type Transport } from "viem";
 import { base } from "viem/chains";
-import { RPC_URL } from "./config.js";
+import { DEFAULT_RPC_URL, PUBLIC_RPC_URLS, RPC_URL } from "./config.js";
 
-export const client = createPublicClient({
-  chain: base,
-  transport: http(RPC_URL, {
-    timeout: 10_000,
-    retryCount: 2,
-    retryDelay: 500,
-  }),
-});
+const HTTP_OPTIONS = { timeout: 10_000, retryCount: 2, retryDelay: 500 };
+
+// An explicit GBLIN_RPC_URL is used alone. Without one, the public RPCs are tried in order: a
+// provider that rate-limits a burst of reads hands the call to the next, instead of failing it.
+const transport =
+  RPC_URL === DEFAULT_RPC_URL
+    ? fallback(PUBLIC_RPC_URLS.map((url) => http(url, HTTP_OPTIONS)), { rank: false })
+    : http(RPC_URL, HTTP_OPTIONS);
+
+export const client: PublicClient<Transport, typeof base> = createPublicClient({ chain: base, transport });
 
 /**
  * Fetch the latest block timestamp from the chain.

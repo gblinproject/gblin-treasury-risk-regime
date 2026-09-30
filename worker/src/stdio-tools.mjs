@@ -16,6 +16,7 @@ const MAP = {
   "treasury.state": "get_treasury_state",
   "treasury.quote": "quote_safe_swap",
   "treasury.health": "analyze_treasury_health",
+  "treasury.plan": "plan_treasury",
   "treasury.nav_history": "get_nav_history",
   "actions.prepare": "prepare_action",
   "actions.preview": "preview_steps",

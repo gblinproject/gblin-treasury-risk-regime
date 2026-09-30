@@ -13,6 +13,7 @@
  *   8. get_auction_state        → the rebalancing auction: side, gap and premium per row, with the bid
  *   9. get_market_risk_regime   → on-chain BTC/ETH risk regime signal
  *  10. verify_risk_attestation  → verify a perishable Risk Attestation
+ *  11. plan_treasury            → idle USDC to a reviewable plan: operating cash, surplus, simulation, blockers (plan.ts)
  *
  * The payment tools live in payments.ts, prepare/preview/status/history in actions.ts, the receipt
  * tools in receipts.ts. Every tool is free by default; see paywall.ts for the metering switch.
@@ -65,6 +66,7 @@ import { PACKAGE_VERSION } from "./config.js";
 import { getAuctionState } from "./auction.js";
 import { RECEIPT_TOOL_DEFINITIONS, RECEIPT_TOOL_HANDLERS } from "./receipts.js";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
+import { PLAN_TREASURY_DEFINITION, handlePlanTreasury } from "./plan.js";
 import { ACTION_TOOL_DEFINITIONS, ACTION_TOOL_HANDLERS } from "./actions.js";
 import { VENUE_FEE_DATA, ZAP_GAS_LIMIT, ZAP_GAS_NOTE, appendBuilderCode, toolError, toolResult, venueDataPerRow } from "./shared.js";
 import {
@@ -1493,6 +1495,7 @@ const TOOL_TITLES: ReadonlyArray<readonly [{ name: string }, string]> = [
   [GET_AUCTION_STATE_DEFINITION, "Read the rebalancing auction"] as const,
   [MARKET_RISK_DEFINITION, "Read the market risk regime"] as const,
   [VERIFY_ATTESTATION_DEFINITION, "Verify a risk attestation"] as const,
+  [PLAN_TREASURY_DEFINITION, "Plan what to do with idle USDC"] as const,
 ];
 
 export const TOOL_DEFINITIONS = [
@@ -1506,6 +1509,7 @@ export const TOOL_DEFINITIONS = [
   GET_AUCTION_STATE_DEFINITION,
   MARKET_RISK_DEFINITION,
   VERIFY_ATTESTATION_DEFINITION,
+  PLAN_TREASURY_DEFINITION,
 ].map((definition) => ({
     ...definition,
     annotations: {
@@ -1535,6 +1539,7 @@ export const TOOL_HANDLERS: Record<string, (args: unknown) => Promise<unknown>> 
   invest_usdc_to_gblin:   handleInvest,
   verify_risk_attestation: handleVerifyRiskAttestation,
   get_auction_state:       handleGetAuctionState,
+  plan_treasury:           handlePlanTreasury,
 
   // ── Paying in GBLIN with a signature (EIP-3009), like USDC ────────────────
   prepare_gblin_payment:      handlePreparePayment as (args: unknown) => Promise<unknown>,

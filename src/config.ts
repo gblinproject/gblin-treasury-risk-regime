@@ -36,6 +36,20 @@ if (_rawRpc && !isValidHttpUrl(_rawRpc)) {
 export const RPC_URL =
   _rawRpc && isValidHttpUrl(_rawRpc) ? _rawRpc : DEFAULT_RPC_URL;
 
+/**
+ * Public Base RPCs tried in order when GBLIN_RPC_URL is not set: each one rate-limits bursts from a
+ * shared egress (a hosted server, a CI runner), and a tool that reads a dozen values at once trips
+ * that limit on a single provider. An explicit GBLIN_RPC_URL is used alone, so a fork or a private
+ * node is never silently replaced by a public one.
+ */
+export const PUBLIC_RPC_URLS: readonly string[] = [
+  DEFAULT_RPC_URL,
+  "https://base.drpc.org",
+  "https://base-mainnet.public.blastapi.io",
+  "https://1rpc.io/base",
+  "https://mainnet.base.org",
+];
+
 // ─── Core contracts (Base mainnet, source verified) ─────────────────────────
 // The vault in service: shares are minted at NAV and redeemed pro rata in kind. It never swaps.
 export const GBLIN_VAULT: Address = "0xc2181d975c05c8c724b334bcED0764c0b86B1D53";

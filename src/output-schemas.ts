@@ -99,6 +99,22 @@ export const OUTPUT_SCHEMAS: Record<string, JsonSchema> = {
     recommendation: obj("hold, rebalance_to_gblin or rebalance_to_usdc, with the reason."),
   }),
 
+  plan_treasury: schema(["wallet", "market", "wallet_state", "operating_cash", "surplus", "park_candidate", "blockers", "simulation", "trial", "next"], {
+    wallet: str(),
+    as_of: obj("Block and time the reads were taken at."),
+    inputs: obj("The inputs as applied, with the defaults filled in."),
+    market: obj("NAV, ETH price, risk regime and crash shield status."),
+    wallet_state: obj("USDC, GBLIN and ETH balances, gas health, redemption cooldown."),
+    operating_cash: obj("USDC to keep liquid: max(reserve_usd, daily_burn_usd × days), with the runway in days."),
+    surplus: obj("USDC above the operating cash."),
+    park_candidate: bool("True when no blocker applies. Not a recommendation."),
+    blockers: arr("Reasons parking is not appropriate right now, if any.", str()),
+    simulation: obj("Mint simulation for the surplus: shares, fees, exit value today, round-trip cost; or nothing_to_park."),
+    trial: obj("The same simulation for the trial amount."),
+    next: obj("The tools to call after a human confirms."),
+    notes: arr(undefined, str()),
+  }),
+
   get_governance_state: schema(["vault", "owner", "owner_is_timelock", "owner_is_renounced", "timelock"], {
     vault: str(),
     lens: str(),

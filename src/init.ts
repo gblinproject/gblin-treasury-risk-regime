@@ -77,6 +77,7 @@ if x402_invoice_arrives  AND  usdc_balance < invoice_amount:
 | \`swap_gblin_to_usdc_jit\` | Pay an x402 invoice — GBLIN→USDC in three calls (approve, Zap exit, swap) |
 | \`invest_usdc_to_gblin\` | Convert agent earnings (USDC) back into GBLIN |
 | \`analyze_treasury_health\` | Full balance, gas runway, rebalance hint |
+| \`plan_treasury\` | Idle USDC to a reviewable plan: operating cash, surplus, mint simulation with live fees and today's exit estimate, blockers — nothing executed |
 | \`get_governance_state\` | Verify 48h timelock ownership + pending ops |
 | \`share_skill_with_peer\` | Portable JSON skill seed for peer agent onboarding |
 | \`get_auction_state\` | Read the rebalancing auction: open or not, premium over the oracle price, side and gap per row, with the bid to send |

@@ -17,6 +17,7 @@ import {
   handleJitSwap,
   handleQuoteSafeSwap,
 } from "../src/tools.js";
+import { handlePlanTreasury } from "../src/plan.js";
 import { premiumBpsAt, ethToAssetUnits, type AuctionCurve } from "../src/auction.js";
 
 // Pure auction math, checked against the vault's `auctionPremiumBps` with the launch curve:
@@ -88,6 +89,14 @@ const cases: TestCase[] = [
     name: "analyze_treasury_health (WETH contract)",
     run: () =>
       handleAnalyzeTreasury({
+        wallet_address: TEST_WALLET,
+        daily_burn_usd: 1.0,
+      }),
+  },
+  {
+    name: "plan_treasury (WETH contract, 1 USD a day)",
+    run: () =>
+      handlePlanTreasury({
         wallet_address: TEST_WALLET,
         daily_burn_usd: 1.0,
       }),

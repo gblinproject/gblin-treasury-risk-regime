@@ -35,6 +35,7 @@ const INSTRUCTIONS =
   "calldata or typed data for your own wallet to sign. " +
   "Read: get_treasury_state, get_governance_state, get_auction_state (the vault rebalances by Dutch auction), " +
   "get_market_risk_regime (calm|elevated|crash), analyze_treasury_health, quote_safe_swap, get_nav_history (NAV beside ETH and BTC). " +
+  "Plan: plan_treasury (idle USDC to operating cash, surplus, a mint simulation with live fees and today's exit estimate, and the blockers; nothing executed). " +
   "Act, in this order: prepare_action (any operation: mint with ETH, WETH or USDC, redeem in kind, exit to ETH or USDC, bid), " +
   "preview_steps (simulate the steps before signing; it finds the gas each vault step really needs), send from your wallet, " +
   "then get_transaction_status. Shortcuts: swap_gblin_to_usdc_jit (exit to USDC to pay an invoice), invest_usdc_to_gblin. " +
