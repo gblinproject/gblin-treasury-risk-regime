@@ -68,7 +68,7 @@ import { RECEIPT_TOOL_DEFINITIONS, RECEIPT_TOOL_HANDLERS } from "./receipts.js";
 import { OUTPUT_SCHEMAS } from "./output-schemas.js";
 import { PLAN_TREASURY_DEFINITION, handlePlanTreasury } from "./plan.js";
 import { ACTION_TOOL_DEFINITIONS, ACTION_TOOL_HANDLERS } from "./actions.js";
-import { VENUE_FEE_DATA, ZAP_GAS_LIMIT, ZAP_GAS_NOTE, appendBuilderCode, toolError, toolResult, venueDataPerRow } from "./shared.js";
+import { VENUE_FEE_DATA, ZAP_GAS_LIMIT, ZAP_GAS_NOTE, appendBuilderCode, toolError, toolResult, venueDataPerRow, withSendCallsFields } from "./shared.js";
 import {
   PREPARE_PAYMENT_TOOL,
   RELAY_PAYMENT_TOOL,
@@ -112,6 +112,7 @@ export const GET_TREASURY_STATE_DEFINITION = {
   inputSchema: {
     type: "object" as const,
     properties: {},
+    required: [],
     additionalProperties: false,
   },
 };
@@ -376,7 +377,7 @@ export async function handleJitSwap(args: unknown) {
           calldata: swapCalldata,
           value: minEthOut.toString(),
         },
-      ],
+      ].map(withSendCallsFields),
       params: {
         gblin_amount: formatUnits(quote.gblinToSell, 18),
         eth_min_out: formatUnits(minEthOut, 18),
@@ -505,7 +506,7 @@ export async function handleInvest(args: unknown) {
           value: "0",
           gas: ZAP_GAS_LIMIT.toString(),
         },
-      ],
+      ].map(withSendCallsFields),
       gas_hint: ZAP_GAS_LIMIT,
       gas_hint_note: ZAP_GAS_NOTE,
       expected: {
@@ -709,6 +710,7 @@ export const GET_GOVERNANCE_STATE_DEFINITION = {
           "Optional 0x-prefixed 32-byte hex id of a specific timelock operation to inspect.",
       },
     },
+    required: [],
     additionalProperties: false,
   },
 };
@@ -1517,7 +1519,7 @@ export const TOOL_DEFINITIONS = [
       title: TOOL_TITLES.find(([d]) => d.name === definition.name)?.[1] ?? definition.name,
     },
   }))
-  .concat(RECEIPT_TOOL_DEFINITIONS)
+  .concat(RECEIPT_TOOL_DEFINITIONS as never)
   // The payment tools carry their own annotations: preparing an authorization is not idempotent,
   // because each call mints a fresh nonce.
   .concat([PREPARE_PAYMENT_TOOL, VERIFY_AUTHORIZATION_TOOL, RELAY_PAYMENT_TOOL] as never)

@@ -63,6 +63,17 @@ export function toolResult(payload: unknown) {
   };
 }
 
+/**
+ * Adds the field names wallet batch APIs expect (`to`, `data`, `chainId`, as in EIP-5792 `wallet_sendCalls`
+ * and Coinbase Wallet MCP's `send_calls`) beside `target` and `calldata`, so a step maps one to one without
+ * renaming. Both spellings stay: existing readers keep working.
+ */
+export function withSendCallsFields<T extends { target: string; calldata: string }>(
+  step: T
+): T & { to: string; data: string; chainId: number } {
+  return { ...step, to: step.target, data: step.calldata, chainId: 8453 };
+}
+
 export function toolError(message: string, hint?: string) {
   return {
     isError: true,

@@ -36,7 +36,7 @@ import { getAuctionState } from "./auction.js";
 import { client } from "./client.js";
 import { GBLIN_LENS, GBLIN_VAULT, GBLIN_ZAP, WETH } from "./config.js";
 import { applySlippageBuffer, checkCooldown, getDynamicSlippage } from "./helpers.js";
-import { ZAP_GAS_LIMIT, appendBuilderCode, toolError, toolResult, venueDataPerRow } from "./shared.js";
+import { ZAP_GAS_LIMIT, appendBuilderCode, toolError, toolResult, venueDataPerRow, withSendCallsFields } from "./shared.js";
 
 // ─── Shared ─────────────────────────────────────────────────────────────────
 
@@ -436,7 +436,7 @@ export async function handlePrepareAction(args: unknown) {
     return toolResult({
       action,
       wallet,
-      steps,
+      steps: steps.map(withSendCallsFields),
       expected,
       warnings,
       next: "Simulate the steps with preview_steps, then send them in order from the wallet, each with the gas it carries.",
@@ -448,14 +448,23 @@ export async function handlePrepareAction(args: unknown) {
 
 // ─── preview_steps ──────────────────────────────────────────────────────────
 
-const StepInputSchema = z.object({
-  target: AddressSchema,
-  calldata: z.string().regex(/^0x([0-9a-fA-F]{2})*$/, "calldata must be 0x-prefixed hex"),
-  value: z.string().regex(/^\d+$/).optional(),
-  gas: z.string().regex(/^\d+$/).optional(),
-  description: z.string().optional(),
-  step: z.number().optional(),
-});
+// A step may arrive spelled as `target`/`calldata` (this server's output) or as `to`/`data` (wallet batch
+// APIs such as send_calls); both are accepted, and the first spelling wins when both are present.
+const StepInputSchema = z.preprocess(
+  (raw) => {
+    if (!raw || typeof raw !== "object") return raw;
+    const s = raw as Record<string, unknown>;
+    return { ...s, target: s.target ?? s.to, calldata: s.calldata ?? s.data };
+  },
+  z.object({
+    target: AddressSchema,
+    calldata: z.string().regex(/^0x([0-9a-fA-F]{2})*$/, "calldata must be 0x-prefixed hex"),
+    value: z.string().regex(/^\d+$/).optional(),
+    gas: z.string().regex(/^\d+$/).optional(),
+    description: z.string().optional(),
+    step: z.number().optional(),
+  })
+);
 
 const PreviewSchema = z.object({
   from: AddressSchema,
@@ -474,16 +483,19 @@ export const PREVIEW_STEPS_DEFINITION = {
         type: "array",
         minItems: 1,
         maxItems: 8,
-        description: "The steps, in order: target, calldata, value in wei (optional), gas (optional).",
+        description:
+          "The steps, in order: target and calldata (or their send_calls spellings, to and data), value in wei (optional), gas (optional).",
         items: {
           type: "object",
           properties: {
-            target: { type: "string", pattern: "^0x[a-fA-F0-9]{40}$" },
-            calldata: { type: "string", pattern: "^0x([0-9a-fA-F]{2})*$" },
+            target: { type: "string", pattern: "^0x[a-fA-F0-9]{40}$", description: "Contract to call. Alias: to." },
+            calldata: { type: "string", pattern: "^0x([0-9a-fA-F]{2})*$", description: "ABI-encoded call. Alias: data." },
+            to: { type: "string", pattern: "^0x[a-fA-F0-9]{40}$" },
+            data: { type: "string", pattern: "^0x([0-9a-fA-F]{2})*$" },
             value: { type: "string", pattern: "^\\d+$" },
             gas: { type: "string", pattern: "^\\d+$" },
           },
-          required: ["target", "calldata"],
+          required: [],
           additionalProperties: true,
         },
       },
@@ -729,6 +741,7 @@ export const NAV_HISTORY_DEFINITION = {
       interval: { type: "string", enum: ["hour", "day"], description: "Spacing of the points. Default day." },
       points: { type: "integer", minimum: 2, maximum: 90, description: "How many points, newest last. Default 30." },
     },
+    required: [],
     additionalProperties: false,
   },
 };

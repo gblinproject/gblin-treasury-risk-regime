@@ -35,7 +35,7 @@ function schema(required: string[], properties: Record<string, JsonSchema>): Jso
 }
 
 const STEP = obj(
-  "One transaction to send, in order: target, calldata, value in wei, and gas when the step needs an explicit limit."
+  "One transaction to send, in order: target, calldata, value in wei, and gas when the step needs an explicit limit. The same call is repeated as to, data and chainId (8453) for wallet batch APIs such as send_calls."
 );
 
 export const OUTPUT_SCHEMAS: Record<string, JsonSchema> = {

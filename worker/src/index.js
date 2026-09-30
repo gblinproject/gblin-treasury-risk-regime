@@ -35,6 +35,7 @@ import { publishAuctionOrders, publisherStatus } from "./auctionpublisher.mjs";
 import { witnessTick, witnessIndex, witnessLatestNote, witnessAddCheckpoint, witnessHistory, witnessDiscoverLogs, witnessConfiguredLogs, WITNESSED_LOGS } from "./witness.mjs";
 import { x402StaticChallenge } from "./x402-challenge.mjs";
 import { BRIDGED_TOOLS, BRIDGED_ALIASES, isBridged, callBridged } from "./stdio-tools.mjs";
+import { SEARCH_TOOL, FETCH_TOOL, searchDocuments, fetchDocument } from "./docsearch.mjs";
 import { incidentFor, incidentResponse } from "./incidents.mjs";
 import { countCall, countOutcome, knownMethod, flushUsageNow, deferredFlush, recentUsage } from "./mcpusage.mjs";
 import { recordRefund, refundSummary } from "./refunds.mjs";
@@ -56,7 +57,7 @@ const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // Bumped on EVERY deploy. The authoritative identifier of the surface remains
 // manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.8" };
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.9" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -334,7 +335,8 @@ const NATIVE_TOOLS = [
 ];
 
 // The npm package's tools, served here from the same source (./stdio-tools.mjs).
-const TOOLS = NATIVE_TOOLS.concat(BRIDGED_TOOLS);
+// `search` and `fetch` come last: research clients look them up by name, and the protocol tools stay first.
+const TOOLS = NATIVE_TOOLS.concat(BRIDGED_TOOLS).concat([SEARCH_TOOL, FETCH_TOOL]);
 
 // ── Coherence Proof v0 — self-observation ─────────────────────────────
 //
@@ -975,6 +977,10 @@ async function callTool(rawName, env, args = {}, req = {}) {
     }
     case "coherence.report":
       return await coherenceReport(env);
+    case "search":
+      return searchDocuments(args.query, TOOLS, cachedFetch);
+    case "fetch":
+      return fetchDocument(args.id, TOOLS, cachedFetch);
 
     case "receipts.seal": {
       if (args.mode && args.mode !== "demo") {
@@ -1273,7 +1279,7 @@ async function handleMessage(msg, env, req = {}) {
           capabilities: { tools: {}, resources: {}, prompts: {} },
           serverInfo: SERVER_INFO,
           instructions:
-            "GBLIN hosted MCP (stateless, no auth, 60 req/min/IP, everything here is free). THREE THINGS LIVE HERE. (1) AI ACTION RECEIPTS - a public append-only RFC 6962 transparency log for AI actions. receipts.seal appends the SHA-256 of your input (and optionally your output) plus a short public label, and returns a portable receipt: Ed25519 signature, inclusion proof, C2SP checkpoint, tree root anchored daily on Base. Minimal call: receipts.seal {action: \"what you did\", input_hash: \"<sha256 hex>\"} - demo mode, 5/day/IP, receipts marked demo:true. Then receipts.verify checks it with pure math, no trust in this server; receipts.get re-reads any receipt by index. A receipt proves the record existed here at this time - NOT that the action happened (provenance is self-reported). (2) MARKET RISK: risk.regime (live calm|elevated|crash from the on-chain Crash Shield), risk.attestation_sample, protocol.stats, protocol.info, coherence.report. Nothing is paid over MCP; unlimited seals and signed attestations are x402 HTTP endpoints - see resources gblin://howto/seal, gblin://howto/attestation, gblin://limits, gblin://keys. Ready-made prompts: seal_and_verify, risk_gate. (3) THE GBLIN VAULT, the same code as the npm package @gblin-protocol/mcp-server: treasury.state, treasury.quote, treasury.health, treasury.nav_history, governance.state, auction.state, attestation.verify; to act, actions.prepare (any operation) -> actions.preview (simulate before signing; finds the gas each vault step really needs) -> send from your own wallet -> actions.status; to pay in GBLIN with a signature and no ETH, payments.prepare -> payments.verify, or payments.relay when nobody else will carry it. This server holds no key and never signs. The npm package's snake_case tool names are accepted here as aliases.",
+            "GBLIN hosted MCP (stateless, no auth, 60 req/min/IP, everything here is free). THREE THINGS LIVE HERE. (1) AI ACTION RECEIPTS - a public append-only RFC 6962 transparency log for AI actions. receipts.seal appends the SHA-256 of your input (and optionally your output) plus a short public label, and returns a portable receipt: Ed25519 signature, inclusion proof, C2SP checkpoint, tree root anchored daily on Base. Minimal call: receipts.seal {action: \"what you did\", input_hash: \"<sha256 hex>\"} - demo mode, 5/day/IP, receipts marked demo:true. Then receipts.verify checks it with pure math, no trust in this server; receipts.get re-reads any receipt by index. A receipt proves the record existed here at this time - NOT that the action happened (provenance is self-reported). (2) MARKET RISK: risk.regime (live calm|elevated|crash from the on-chain Crash Shield), risk.attestation_sample, protocol.stats, protocol.info, coherence.report. Nothing is paid over MCP; unlimited seals and signed attestations are x402 HTTP endpoints - see resources gblin://howto/seal, gblin://howto/attestation, gblin://limits, gblin://keys. Ready-made prompts: seal_and_verify, risk_gate. (3) THE GBLIN VAULT, the same code as the npm package @gblin-protocol/mcp-server: treasury.state, treasury.quote, treasury.health, treasury.nav_history, governance.state, auction.state, attestation.verify; to act, actions.prepare (any operation) -> actions.preview (simulate before signing; finds the gas each vault step really needs) -> send from your own wallet -> actions.status; to pay in GBLIN with a signature and no ETH, payments.prepare -> payments.verify, or payments.relay when nobody else will carry it. This server holds no key and never signs. The npm package's snake_case tool names are accepted here as aliases. (4) DOCUMENTS: search (query) and fetch (id) return the protocol's documentation, one card per tool and the live vault state as documents, in the shape research clients read.",
         });
       }
       case "ping":

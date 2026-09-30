@@ -190,7 +190,7 @@ export const HOW_TO_SEAL_PAID_DEFINITION = {
   name: "how_to_seal_paid",
   description:
     "Instructions for UNLIMITED paid seals ($0.0045 USDC per seal via x402 on Base) in GBLIN's AI Action Receipts transparency log — endpoint, body schema, payment flow, and how to verify receipts offline. Free demo alternative: seal_action_demo (5/day/IP).",
-  inputSchema: { type: "object" as const, properties: {}, additionalProperties: false },
+  inputSchema: { type: "object" as const, properties: {}, required: [], additionalProperties: false },
 };
 
 async function handleHowToSealPaid() {
