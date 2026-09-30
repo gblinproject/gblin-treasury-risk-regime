@@ -1099,6 +1099,11 @@ async function metaDoc(env) {
     legacy_tool_aliases: SURFACE_META.legacy_tool_aliases,
     manifest_hash: await manifestHash(),
     paid_over_mcp: false, auth_required: false, rate_limit_rpm_per_ip: 60,
+    // Whether reads go through a keyed RPC (set) or the public fallbacks; never the URL itself.
+    rpc: {
+      keyed: Boolean(env && env.GBLIN_RPC_URL),
+      keyed_for_package_tools: Boolean(globalThis.process && globalThis.process.env && globalThis.process.env.GBLIN_RPC_URL),
+    },
     sibling_package: SURFACE_META.sibling_package,
     docs: { llms_txt: `${SITE}/llms.txt`, smithery: "https://smithery.ai/servers/gblin-protocol/mcp", repo: "https://github.com/gblinproject/gblin-treasury-risk-regime" },
     audit: SURFACE_META.get_audit_urls,
@@ -1467,7 +1472,11 @@ export default {
 
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
 
-    const ip = request.headers.get("cf-connecting-ip") || "unknown";
+    // Behind the site's own reverse proxy (mcp.gblin.digital, a Vercel rewrite) every request arrives from
+    // Vercel's egress: the client is the first address in x-forwarded-for. Only rate limiting reads it.
+    const viaProxy = request.headers.has("x-vercel-id");
+    const forwarded = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim();
+    const ip = (viaProxy && forwarded) || request.headers.get("cf-connecting-ip") || "unknown";
     if (rateLimited(ip)) return json({ error: "rate limited (60 req/min)" }, 429);
 
     // Info page for humans/probes at the root.
