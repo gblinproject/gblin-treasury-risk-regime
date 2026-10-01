@@ -1,29 +1,65 @@
 name: Release
 
-# Publishes a version end to end when a tag vX.Y.Z is pushed:
-#   1. checks that the tag, package.json and server.json carry the same version;
+# Releases a version end to end when a push to main carries a version that npm does not have yet:
+#   1. checks that package.json and server.json carry the same version;
 #   2. builds, tests and publishes @gblin-protocol/mcp-server to npm through trusted publishing (OIDC, no token);
 #   3. publishes server.json to the MCP Registry through GitHub OIDC;
-#   4. creates the GitHub release, which directories that track releases (such as Glama) rebuild from.
+#   4. creates the tag and the GitHub release, which directories that track releases (such as Glama) rebuild from.
+# A push that does not change the version does nothing. The workflow can also be started by hand from the Actions tab.
 
 on:
   push:
-    tags: ["v*.*.*"]
+    branches: [main]
+    paths: ["package.json", "server.json"]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      publish: ${{ steps.version.outputs.publish }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read and compare versions
+        id: version
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          NAME=$(node -p "require('./package.json').name")
+          SRV=$(node -p "require('./server.json').version")
+          SRV_PKG=$(node -p "require('./server.json').packages[0].version")
+          echo "package.json=$PKG server.json=$SRV server.json.packages[0]=$SRV_PKG"
+          if [ "$PKG" != "$SRV" ] || [ "$PKG" != "$SRV_PKG" ]; then
+            echo "::error::Version mismatch: package.json and server.json must carry the same version."
+            exit 1
+          fi
+          echo "version=$PKG" >> "$GITHUB_OUTPUT"
+          if npm view "$NAME@$PKG" version >/dev/null 2>&1; then
+            echo "$NAME@$PKG is already on npm: nothing to release."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
   release:
+    needs: check
+    if: needs.check.outputs.publish == 'true'
     runs-on: ubuntu-latest
     environment: release
     permissions:
-      contents: write # create the GitHub release
+      contents: write # create the tag and the GitHub release
       id-token: write # npm trusted publishing and MCP Registry login
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,18 +74,6 @@ jobs:
       - name: Use npm 11 (trusted publishing needs 11.5.1 or later)
         run: npm install -g npm@11 && npm --version
 
-      - name: Check that tag, package.json and server.json agree
-        run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          PKG=$(node -p "require('./package.json').version")
-          SRV=$(node -p "require('./server.json').version")
-          SRV_PKG=$(node -p "require('./server.json').packages[0].version")
-          echo "tag=$TAG package.json=$PKG server.json=$SRV server.json.packages[0]=$SRV_PKG"
-          if [ "$TAG" != "$PKG" ] || [ "$TAG" != "$SRV" ] || [ "$TAG" != "$SRV_PKG" ]; then
-            echo "::error::Version mismatch: bump package.json and server.json to $TAG before tagging."
-            exit 1
-          fi
-
       - name: Install dependencies
         run: npm ci
 
@@ -60,19 +84,13 @@ jobs:
         run: npm test
 
       - name: Publish to npm
-        run: |
-          NAME=$(node -p "require('./package.json').name")
-          if npm view "$NAME@${GITHUB_REF_NAME#v}" version >/dev/null 2>&1; then
-            echo "$NAME@${GITHUB_REF_NAME#v} is already on npm, skipping."
-          else
-            npm publish --access public
-          fi
+        run: npm publish --access public
 
       - name: Wait until npm serves the new version
         run: |
           NAME=$(node -p "require('./package.json').name")
           for i in $(seq 1 40); do
-            if npm view "$NAME@${GITHUB_REF_NAME#v}" version >/dev/null 2>&1; then
+            if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
               echo "available on npm"
               exit 0
             fi
@@ -96,12 +114,12 @@ jobs:
           ./mcp-publisher login github-oidc
           ./mcp-publisher publish
 
-      - name: Create the GitHub release
+      - name: Create the tag and the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            echo "Release $GITHUB_REF_NAME already exists, skipping."
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "Release v$VERSION already exists, skipping."
           else
-            gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+            gh release create "v$VERSION" --target "$GITHUB_SHA" --generate-notes --title "v$VERSION"
           fi

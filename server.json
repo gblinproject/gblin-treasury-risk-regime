@@ -7,12 +7,12 @@
     "source": "github"
   },
   "websiteUrl": "https://gblin.digital/agents",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@gblin-protocol/mcp-server",
-      "version": "0.6.2",
+      "version": "0.6.3",
       "transport": {
         "type": "stdio"
       },
