@@ -5,7 +5,7 @@
  * Run against a local Worker:  cd worker && npx wrangler dev --port 8787   then
  *   npx tsx scripts/test-hosted.ts http://127.0.0.1:8787/mcp
  * Run against production:
- *   npx tsx scripts/test-hosted.ts https://gblin-mcp.gblin-mcp-worker.workers.dev/mcp
+ *   npx tsx scripts/test-hosted.ts https://mcp.gblin.digital/mcp
  *
  * Reads only. payments.relay moves funds and receipts.seal writes to a public log: neither is called.
  */

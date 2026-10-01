@@ -30,7 +30,7 @@
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://gblin-mcp.gblin-mcp-worker.workers.dev/mcp"
+      "url": "https://mcp.gblin.digital/mcp"
     }
   ]
 }

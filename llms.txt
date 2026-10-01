@@ -78,7 +78,7 @@ Claude Desktop config:
 19. `get_transaction_status` — what a sent transaction did, with the net token movements
 20. `get_nav_history` — NAV per share over time beside ETH/USD and BTC/USD
 
-The hosted server (https://gblin-mcp.gblin-mcp-worker.workers.dev/mcp) serves the
+The hosted server (https://mcp.gblin.digital/mcp) serves the
 vault, action and payment tools under two-level names (treasury.*, actions.*,
 payments.*, governance.state, auction.state, attestation.verify), from the same
 source; the names above are accepted there as aliases.
@@ -117,5 +117,5 @@ Attestations issued under domain version 1 remain verifiable.
 - Source: https://github.com/gblinproject/gblin-treasury-risk-regime
 - Docs: https://gblin.digital/agents
 - Vault: https://basescan.org/address/0xc2181d975c05c8c724b334bcED0764c0b86B1D53
-- Hosted MCP (Streamable HTTP): https://gblin-mcp.gblin-mcp-worker.workers.dev/mcp
+- Hosted MCP (Streamable HTTP): https://mcp.gblin.digital/mcp
 - License: MIT

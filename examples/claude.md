@@ -20,7 +20,7 @@
 Streamable HTTP endpoint — works from any remote MCP client, no Node needed:
 
 ```
-https://gblin-mcp.gblin-mcp-worker.workers.dev/mcp
+https://mcp.gblin.digital/mcp
 ```
 
 Tools: live risk regime, attestation sample, agent-economy stats, protocol info,

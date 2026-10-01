@@ -30,7 +30,7 @@ import { getTokenDomain } from "./payments.js";
 import { TOOL_PRICES } from "./paywall.js";
 
 const EXPLORER = "https://basescan.org/address/";
-const HOSTED_MCP = "https://gblin-mcp.gblin-mcp-worker.workers.dev/mcp";
+const HOSTED_MCP = "https://mcp.gblin.digital/mcp";
 
 export interface ResourceDefinition {
   uri: string;

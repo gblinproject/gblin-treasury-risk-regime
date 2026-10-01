@@ -57,7 +57,7 @@ const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // Bumped on EVERY deploy. The authoritative identifier of the surface remains
 // manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.9" };
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.10" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -1092,7 +1092,7 @@ async function manifestHash() {
 async function metaDoc(env) {
   return {
     server: SERVER_INFO, transport: SURFACE_META.transport, protocol_versions: SUPPORTED_PROTOCOLS,
-    endpoint: "https://gblin-mcp.gblin-mcp-worker.workers.dev/mcp",
+    endpoint: "https://mcp.gblin.digital/mcp",
     tool_count: TOOLS.length, tool_names: TOOLS.map((t) => t.name),
     resource_count: RESOURCES.length, resource_uris: RESOURCES.map((r) => r.uri),
     prompt_count: PROMPTS.length, prompt_names: PROMPTS.map((p) => p.name),

@@ -62,7 +62,7 @@ function toolDocuments(tools) {
       `Description: ${t.description}`,
       `Input: ${JSON.stringify(t.inputSchema)}`,
       t.outputSchema ? `Output: ${JSON.stringify(t.outputSchema)}` : "",
-      "Free, no authentication. Hosted at https://gblin-mcp.gblin-mcp-worker.workers.dev/mcp (Streamable HTTP); the same tools run locally with npx @gblin-protocol/mcp-server.",
+      "Free, no authentication. Hosted at https://mcp.gblin.digital/mcp (Streamable HTTP); the same tools run locally with npx @gblin-protocol/mcp-server.",
     ].filter(Boolean).join("\n"),
   }));
 }
