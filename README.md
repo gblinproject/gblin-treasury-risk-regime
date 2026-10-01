@@ -12,6 +12,7 @@ Published on npm as [`@gblin-protocol/mcp-server`](https://www.npmjs.com/package
 [![x402 Manifest](https://img.shields.io/badge/x402-manifest-green)](https://gblin.digital/.well-known/x402)
 [![MCP Registry](https://img.shields.io/badge/MCP%20Registry-Active-success)](https://registry.modelcontextprotocol.io)
 [![Smithery](https://img.shields.io/badge/Smithery-gblin--protocol-orange)](https://smithery.ai/servers/gblin-protocol/mcp)
+[![Glama score](https://glama.ai/mcp/servers/gblinproject/gblin-treasury-risk-regime/badges/score.svg)](https://glama.ai/mcp/servers/gblinproject/gblin-treasury-risk-regime)
 
 Documentation and quick start: [gblin.digital/agents](https://gblin.digital/agents). Starter examples: [`examples/`](examples/).
 
