@@ -1,0 +1,107 @@
+name: Release
+
+# Publishes a version end to end when a tag vX.Y.Z is pushed:
+#   1. checks that the tag, package.json and server.json carry the same version;
+#   2. builds, tests and publishes @gblin-protocol/mcp-server to npm through trusted publishing (OIDC, no token);
+#   3. publishes server.json to the MCP Registry through GitHub OIDC;
+#   4. creates the GitHub release, which directories that track releases (such as Glama) rebuild from.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write # create the GitHub release
+      id-token: write # npm trusted publishing and MCP Registry login
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Use npm 11 (trusted publishing needs 11.5.1 or later)
+        run: npm install -g npm@11 && npm --version
+
+      - name: Check that tag, package.json and server.json agree
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(node -p "require('./package.json').version")
+          SRV=$(node -p "require('./server.json').version")
+          SRV_PKG=$(node -p "require('./server.json').packages[0].version")
+          echo "tag=$TAG package.json=$PKG server.json=$SRV server.json.packages[0]=$SRV_PKG"
+          if [ "$TAG" != "$PKG" ] || [ "$TAG" != "$SRV" ] || [ "$TAG" != "$SRV_PKG" ]; then
+            echo "::error::Version mismatch: bump package.json and server.json to $TAG before tagging."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Live test against Base mainnet
+        run: npm test
+
+      - name: Publish to npm
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          if npm view "$NAME@${GITHUB_REF_NAME#v}" version >/dev/null 2>&1; then
+            echo "$NAME@${GITHUB_REF_NAME#v} is already on npm, skipping."
+          else
+            npm publish --access public
+          fi
+
+      - name: Wait until npm serves the new version
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          for i in $(seq 1 40); do
+            if npm view "$NAME@${GITHUB_REF_NAME#v}" version >/dev/null 2>&1; then
+              echo "available on npm"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::npm did not serve the new version within 10 minutes."
+          exit 1
+
+      - name: Install mcp-publisher
+        env:
+          MCP_PUBLISHER_VERSION: v1.8.1
+          MCP_PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
+        run: |
+          curl -fsSL -o mcp-publisher.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${MCP_PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf mcp-publisher.tar.gz mcp-publisher
+
+      - name: Publish to the MCP Registry
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists, skipping."
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+          fi
