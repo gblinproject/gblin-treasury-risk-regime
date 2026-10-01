@@ -14,14 +14,13 @@ Trigger when:
 
 ## What JIT redemption does
 
-The GBLIN protocol's `swap_gblin_to_usdc_jit` endpoint returns calldata for two transactions that:
+The `/api/x402/jit` endpoint (MCP tool `swap_gblin_to_usdc_jit`) returns unsigned calldata for three transactions:
 
-1. Burns the right amount of GBLIN
-2. Withdraws the user's proportional share of WETH, cbBTC, USDC from the treasury
-3. Swaps WETH and cbBTC to USDC via Uniswap V3 (with MEV-safe min outs)
-4. Transfers the resulting USDC to the user
+1. Approve the shares to the GBLIN Zap
+2. `GBLINZap.sellGBLINForEth`: the Zap redeems the shares in kind on the vault and sells every leg for ETH, all or nothing (a leg that cannot be sold reverts the whole step)
+3. A Uniswap V3 WETH -> USDC swap that spends only the guaranteed ETH minimum of step 2 and still returns at least the requested USDC
 
-Two deterministic steps (redeem, then swap), each with its own oracle-anchored minOut. Compatible with EOA, ERC-4337 Smart Accounts, and EIP-7702 (smart accounts can batch both steps in one UserOp).
+Every step carries a non-zero minimum. Compatible with EOA, ERC-4337 Smart Accounts, and EIP-7702 (smart accounts can batch the three steps in one operation). Each step also carries `to`, `data` and `chainId`, so it maps one to one onto wallet batch APIs such as `send_calls`.
 
 ## Endpoint
 

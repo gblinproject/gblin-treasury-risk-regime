@@ -15,9 +15,9 @@ Trigger when:
 
 ## What Crash Shield is
 
-GBLIN's Crash Shield is an on-chain algorithmic indicator. The protocol tracks the peak price of each basket asset (cbBTC, WETH) over time. When the current Chainlink-reported price draws down past the adaptive threshold (from ~15%, scaling with volatility and decaying peaks in V6), the Crash Shield activates and rebalances allocations toward USDC.
+GBLIN's Crash Shield is an on-chain algorithmic indicator. The vault tracks a slowly decaying peak price for each volatile basket asset (cbBTC, WETH). When the Chainlink-reported price draws down past an adaptive threshold (15% at the floor, widening with volatility), the shield cuts that asset's target weight; the difference moves to USDC through the vault's Dutch auction, which anyone can fill. The vault never swaps on its own.
 
-This means: **`crashShieldActive: true` is a high-confidence on-chain signal that significant market drawdown has occurred.** It's not opinion-based, not lagging like sentiment indexes, and not subject to manipulation (the underlying data is Chainlink oracles).
+This means: **`crash_shield_active: true` is a high-confidence on-chain signal that significant market drawdown has occurred.** It's not opinion-based, not lagging like sentiment indexes, and resistant to manipulation (the underlying data is Chainlink oracles).
 
 ## How to read it
 
@@ -31,21 +31,22 @@ async function getMarketRiskSignal(): Promise<{
   const state = await response.json();
   // treasury-state is free (no payment) and CDN-cached for 60 s.
 
+  // Each basket row: { token, is_stable, base_weight_pct, dynamic_weight_pct, slashed }.
   const affected = state.basket
-    .filter((a: any) => a.dynamicWeight < a.weight)
+    .filter((a: any) => a.slashed)
     .map((a: any) => a.token);
 
   return {
-    shieldActive: state.crashShieldActive,
+    shieldActive: state.crash_shield_active,
     affectedAssets: affected,
-    signal: state.crashShieldActive ? 'risk-off' : 'normal',
+    signal: state.crash_shield_active ? 'risk-off' : 'normal',
   };
 }
 ```
 
 ## Risk-off actions for autonomous agents
 
-When `crashShieldActive: true`:
+When `crash_shield_active: true`:
 
 1. **Pause new leveraged positions.** Do not open new long positions on volatile assets.
 
@@ -59,7 +60,7 @@ When `crashShieldActive: true`:
 
 ## Risk-off actions for cautious agents
 
-When `crashShieldActive: true` AND your agent is conservative:
+When `crash_shield_active: true` AND your agent is conservative:
 
 ```typescript
 async function executeRiskOffPlaybook(walletAddress: `0x${string}`) {
