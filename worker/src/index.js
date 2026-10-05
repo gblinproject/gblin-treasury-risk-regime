@@ -57,7 +57,7 @@ const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // Bumped on EVERY deploy. The authoritative identifier of the surface remains
 // manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.13" };
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.14" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -1272,6 +1272,47 @@ function rpcError(id, code, message) {
 const BASE_INSTRUCTIONS =
   "GBLIN hosted MCP (stateless, no auth, 60 req/min/IP, everything here is free). THREE THINGS LIVE HERE. (1) AI ACTION RECEIPTS - a public append-only RFC 6962 transparency log for AI actions. receipts.seal appends the SHA-256 of your input (and optionally your output) plus a short public label, and returns a portable receipt: Ed25519 signature, inclusion proof, C2SP checkpoint, tree root anchored daily on Base. Minimal call: receipts.seal {action: \"what you did\", input_hash: \"<sha256 hex>\"} - demo mode, 5/day/IP, receipts marked demo:true. Then receipts.verify checks it with pure math, no trust in this server; receipts.get re-reads any receipt by index. A receipt proves the record existed here at this time - NOT that the action happened (provenance is self-reported). (2) MARKET RISK: risk.regime (live calm|elevated|crash from the on-chain Crash Shield), risk.attestation_sample, protocol.stats, protocol.info, coherence.report. Nothing is paid over MCP; unlimited seals and signed attestations are x402 HTTP endpoints - see resources gblin://howto/seal, gblin://howto/attestation, gblin://limits, gblin://keys. Ready-made prompts: seal_and_verify, risk_gate. (3) THE GBLIN VAULT, the same code as the npm package @gblin-protocol/mcp-server: treasury.state, treasury.quote, treasury.health, treasury.nav_history, governance.state, auction.state, attestation.verify; to act, actions.prepare (any operation) -> actions.preview (simulate before signing; finds the gas each vault step really needs) -> send from your own wallet -> actions.status; to pay in GBLIN with a signature and no ETH, payments.prepare -> payments.verify, or payments.relay when nobody else will carry it. This server holds no key and never signs. The npm package's snake_case tool names are accepted here as aliases. (4) DOCUMENTS: search (query) and fetch (id) return the protocol's documentation, one card per tool and the live vault state as documents, in the shape research clients read.";
 
+// The npm package's handlers cite the package's own tool names in their output ("call
+// preview_steps"); on this server those tools carry two-level names, and two of them have no
+// counterpart (invest_usdc_to_gblin and swap_gblin_to_usdc_jit map onto actions.prepare).
+// Rewritten in every string of a bridged result so that a client of this server never gets a
+// name it cannot call. Alias resolution in tools/call is unchanged.
+const HOSTED_NAME_REWRITES = [
+  [/invest_usdc_to_gblin with usdc_amount ("[^"]*")/g, 'actions.prepare with action mint_with_usdc and amount $1'],
+  [/\binvest_usdc_to_gblin\b/g, "actions.prepare (action mint_with_usdc)"],
+  [/\bswap_gblin_to_usdc_jit\b/g, "actions.prepare (action exit_to_usdc)"],
+  ...Object.entries(BRIDGED_ALIASES)
+    .sort((a, b) => b[0].length - a[0].length)
+    .map(([stdio, hosted]) => [new RegExp(`\\b${stdio}\\b`, "g"), hosted]),
+];
+function hostedNames(text, surface) {
+  let out = text;
+  for (const [re, to] of HOSTED_NAME_REWRITES) out = out.replace(re, to);
+  if (surface === "directory") {
+    out = out.replace(/\bpayments\.relay\b/g, "payments.relay (served at https://mcp.gblin.digital/mcp, not on this surface)");
+  }
+  return out;
+}
+function hostedNamesDeep(value, surface) {
+  if (typeof value === "string") return hostedNames(value, surface);
+  if (Array.isArray(value)) return value.map((v) => hostedNamesDeep(v, surface));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = hostedNamesDeep(v, surface);
+    return out;
+  }
+  return value;
+}
+function hostedNamesInResult(result, surface) {
+  if (!result || typeof result !== "object") return result;
+  const out = { ...result };
+  if (Array.isArray(out.content)) {
+    out.content = out.content.map((c) => (c && c.type === "text" && typeof c.text === "string" ? { ...c, text: hostedNames(c.text, surface) } : c));
+  }
+  if (out.structuredContent !== undefined) out.structuredContent = hostedNamesDeep(out.structuredContent, surface);
+  return out;
+}
+
 async function handleMessage(msg, env, req = {}) {
   if (!msg || msg.jsonrpc !== "2.0" || typeof msg.method !== "string") {
     return rpcError(msg && "id" in msg ? msg.id : null, -32600, "Invalid Request");
@@ -1339,8 +1380,9 @@ async function handleMessage(msg, env, req = {}) {
             `or use the full server at https://mcp.gblin.digital/mcp.`);
         }
         if (isBridged(bridged)) {
-          // The npm package's handler returns a complete tool result: pass it through.
-          return rpcResult(id, await callBridged(bridged, (params && params.arguments) || {}));
+          // The npm package's handler returns a complete tool result: pass it through, with the
+          // tool names it cites rewritten to the names served here.
+          return rpcResult(id, hostedNamesInResult(await callBridged(bridged, (params && params.arguments) || {}), req.surface));
         }
         try {
           const out = await callTool(name, env, (params && params.arguments) || {}, req);
