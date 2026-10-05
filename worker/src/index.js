@@ -57,7 +57,7 @@ const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // Bumped on EVERY deploy. The authoritative identifier of the surface remains
 // manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.12" };
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.13" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -1080,6 +1080,23 @@ const SURFACE_META = {
   legacy_tool_aliases: { note: "Pre-2026-08-21 flat names still accepted by tools/call (not listed). Removed after 2026-11-21.", map: LEGACY_TOOL_NAMES },
   get_audit_urls: { meta: "/meta", tools: "/tools.json", resources: "/resources.json", conformance: "/conformance", verify: "/v1/verify/:index" },
 };
+// Directory surface: the same server at /mcp/directory, listing every tool except the one that
+// submits a transaction on behalf of the caller (payments.relay). Public connector directories
+// accept software that reads, simulates, verifies and prepares unsigned calldata, not software
+// that executes transfers; the full toolset stays at /mcp, in the npm package and over HTTP.
+const DIRECTORY_PATH = "/mcp/directory";
+const DIRECTORY_EXCLUDED = new Set(["payments.relay"]);
+const DIRECTORY_TOOLS = TOOLS.filter((t) => !DIRECTORY_EXCLUDED.has(t.name));
+const DIRECTORY_META = {
+  ...SURFACE_META,
+  tool_count: DIRECTORY_TOOLS.length,
+  surface: "directory",
+  surface_note: `Same server as /mcp without ${[...DIRECTORY_EXCLUDED].join(", ")}, which submits a signed transfer on the caller's behalf. The full toolset is at https://mcp.gblin.digital/mcp.`,
+};
+const RELAY_CLAUSE = ", or payments.relay when nobody else will carry it";
+function surfaceInstructions(surface) {
+  return surface === "directory" ? BASE_INSTRUCTIONS.replace(RELAY_CLAUSE, "") : BASE_INSTRUCTIONS;
+}
 // Canonical manifest hash (tools + resources), so docs and Smithery can be checked against the live surface.
 let MANIFEST_HASH = null;
 async function manifestHash() {
@@ -1094,6 +1111,7 @@ async function metaDoc(env) {
     server: SERVER_INFO, transport: SURFACE_META.transport, protocol_versions: SUPPORTED_PROTOCOLS,
     endpoint: "https://mcp.gblin.digital/mcp",
     tool_count: TOOLS.length, tool_names: TOOLS.map((t) => t.name),
+    directory_surface: { endpoint: `https://mcp.gblin.digital${DIRECTORY_PATH}`, tool_count: DIRECTORY_TOOLS.length, excluded: [...DIRECTORY_EXCLUDED] },
     resource_count: RESOURCES.length, resource_uris: RESOURCES.map((r) => r.uri),
     prompt_count: PROMPTS.length, prompt_names: PROMPTS.map((p) => p.name),
     legacy_tool_aliases: SURFACE_META.legacy_tool_aliases,
@@ -1251,6 +1269,9 @@ function rpcError(id, code, message) {
   return { jsonrpc: "2.0", id, error: { code, message } };
 }
 
+const BASE_INSTRUCTIONS =
+  "GBLIN hosted MCP (stateless, no auth, 60 req/min/IP, everything here is free). THREE THINGS LIVE HERE. (1) AI ACTION RECEIPTS - a public append-only RFC 6962 transparency log for AI actions. receipts.seal appends the SHA-256 of your input (and optionally your output) plus a short public label, and returns a portable receipt: Ed25519 signature, inclusion proof, C2SP checkpoint, tree root anchored daily on Base. Minimal call: receipts.seal {action: \"what you did\", input_hash: \"<sha256 hex>\"} - demo mode, 5/day/IP, receipts marked demo:true. Then receipts.verify checks it with pure math, no trust in this server; receipts.get re-reads any receipt by index. A receipt proves the record existed here at this time - NOT that the action happened (provenance is self-reported). (2) MARKET RISK: risk.regime (live calm|elevated|crash from the on-chain Crash Shield), risk.attestation_sample, protocol.stats, protocol.info, coherence.report. Nothing is paid over MCP; unlimited seals and signed attestations are x402 HTTP endpoints - see resources gblin://howto/seal, gblin://howto/attestation, gblin://limits, gblin://keys. Ready-made prompts: seal_and_verify, risk_gate. (3) THE GBLIN VAULT, the same code as the npm package @gblin-protocol/mcp-server: treasury.state, treasury.quote, treasury.health, treasury.nav_history, governance.state, auction.state, attestation.verify; to act, actions.prepare (any operation) -> actions.preview (simulate before signing; finds the gas each vault step really needs) -> send from your own wallet -> actions.status; to pay in GBLIN with a signature and no ETH, payments.prepare -> payments.verify, or payments.relay when nobody else will carry it. This server holds no key and never signs. The npm package's snake_case tool names are accepted here as aliases. (4) DOCUMENTS: search (query) and fetch (id) return the protocol's documentation, one card per tool and the live vault state as documents, in the shape research clients read.";
+
 async function handleMessage(msg, env, req = {}) {
   if (!msg || msg.jsonrpc !== "2.0" || typeof msg.method !== "string") {
     return rpcError(msg && "id" in msg ? msg.id : null, -32600, "Invalid Request");
@@ -1283,14 +1304,15 @@ async function handleMessage(msg, env, req = {}) {
           protocolVersion,
           capabilities: { tools: {}, resources: {}, prompts: {} },
           serverInfo: SERVER_INFO,
-          instructions:
-            "GBLIN hosted MCP (stateless, no auth, 60 req/min/IP, everything here is free). THREE THINGS LIVE HERE. (1) AI ACTION RECEIPTS - a public append-only RFC 6962 transparency log for AI actions. receipts.seal appends the SHA-256 of your input (and optionally your output) plus a short public label, and returns a portable receipt: Ed25519 signature, inclusion proof, C2SP checkpoint, tree root anchored daily on Base. Minimal call: receipts.seal {action: \"what you did\", input_hash: \"<sha256 hex>\"} - demo mode, 5/day/IP, receipts marked demo:true. Then receipts.verify checks it with pure math, no trust in this server; receipts.get re-reads any receipt by index. A receipt proves the record existed here at this time - NOT that the action happened (provenance is self-reported). (2) MARKET RISK: risk.regime (live calm|elevated|crash from the on-chain Crash Shield), risk.attestation_sample, protocol.stats, protocol.info, coherence.report. Nothing is paid over MCP; unlimited seals and signed attestations are x402 HTTP endpoints - see resources gblin://howto/seal, gblin://howto/attestation, gblin://limits, gblin://keys. Ready-made prompts: seal_and_verify, risk_gate. (3) THE GBLIN VAULT, the same code as the npm package @gblin-protocol/mcp-server: treasury.state, treasury.quote, treasury.health, treasury.nav_history, governance.state, auction.state, attestation.verify; to act, actions.prepare (any operation) -> actions.preview (simulate before signing; finds the gas each vault step really needs) -> send from your own wallet -> actions.status; to pay in GBLIN with a signature and no ETH, payments.prepare -> payments.verify, or payments.relay when nobody else will carry it. This server holds no key and never signs. The npm package's snake_case tool names are accepted here as aliases. (4) DOCUMENTS: search (query) and fetch (id) return the protocol's documentation, one card per tool and the live vault state as documents, in the shape research clients read.",
+          instructions: surfaceInstructions(req.surface),
         });
       }
       case "ping":
         return rpcResult(id, {});
       case "tools/list":
-        return rpcResult(id, { tools: TOOLS, _meta: SURFACE_META });
+        return req.surface === "directory"
+          ? rpcResult(id, { tools: DIRECTORY_TOOLS, _meta: DIRECTORY_META })
+          : rpcResult(id, { tools: TOOLS, _meta: SURFACE_META });
       case "prompts/list":
         return rpcResult(id, { prompts: PROMPTS });
       case "prompts/get": {
@@ -1310,6 +1332,12 @@ async function handleMessage(msg, env, req = {}) {
       case "tools/call": {
         const name = params && params.name;
         const bridged = BRIDGED_ALIASES[name] || name;
+        if (req.surface === "directory" && DIRECTORY_EXCLUDED.has(LEGACY_TOOL_NAMES[bridged] || bridged)) {
+          return rpcError(id, -32602,
+            `${bridged} is not served on this surface: it submits a signed transfer on the caller's behalf. ` +
+            `Prepare and verify the payment here (payments.prepare, payments.verify), then carry it from your own wallet, ` +
+            `or use the full server at https://mcp.gblin.digital/mcp.`);
+        }
         if (isBridged(bridged)) {
           // The npm package's handler returns a complete tool result: pass it through.
           return rpcResult(id, await callBridged(bridged, (params && params.arguments) || {}));
@@ -1484,6 +1512,7 @@ export default {
       return json({
         name: SERVER_INFO.name,
         mcp_endpoint: "/mcp",
+        directory_endpoint: DIRECTORY_PATH,
         transport: "streamable-http (stateless, JSON responses)",
         tools: TOOLS.map((t) => t.name),
         stdio_twin: "npx @gblin-protocol/mcp-server (full toolset, free)",
@@ -1881,7 +1910,8 @@ export default {
       return json(await recentUsage(env, days), 200, { "cache-control": "public, max-age=120" });
     }
 
-    if (url.pathname !== "/mcp") return json({ error: "not found — MCP endpoint is /mcp" }, 404);
+    const surface = url.pathname === DIRECTORY_PATH ? "directory" : "main";
+    if (url.pathname !== "/mcp" && surface !== "directory") return json({ error: "not found — MCP endpoint is /mcp" }, 404);
 
     // Stateless server: no SSE stream to resume. Spec-permitted response.
     if (request.method === "GET") {
@@ -1901,7 +1931,7 @@ export default {
     if (Array.isArray(body)) {
       const results = [];
       for (const m of body) {
-        const r = await handleMessage(m, env, { ip, ctx });
+        const r = await handleMessage(m, env, { ip, ctx, surface });
         if (r) results.push(r);
       }
       flushUsage(env, ctx);
@@ -1909,7 +1939,7 @@ export default {
       return json(results);
     }
 
-    const result = await handleMessage(body, env, { ip, ctx });
+    const result = await handleMessage(body, env, { ip, ctx, surface });
     flushUsage(env, ctx);
     if (result === null) return new Response(null, { status: 202, headers: CORS });
     return json(result);
