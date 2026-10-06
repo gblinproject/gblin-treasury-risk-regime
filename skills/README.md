@@ -31,6 +31,7 @@ Each skill is a folder with `SKILL.md` (YAML frontmatter + Markdown). At session
 | `earn-as-base-keeper` | User wants an agent that earns the auction premium on Base |
 | `risk-attestation` | User wants signed, portable proof-of-diligence for agent actions |
 | `gblin-agent-treasury` | User runs a self-custody agent treasury on Base: USDC reserve, surplus parked in GBLIN, just-in-time refill, x402 payments with automatic refill (CLI `@gblin-protocol/agent-treasury`) |
+| `gblin` | User of a Bankr wallet wants to read, mint or redeem GBLIN on Base: free reads, unsigned steps sent with `bankr wallet submit`, redemption in kind (also listed in the Bankr skills catalog format: `catalog.json`, `logo.png`) |
 
 ## Install
 
