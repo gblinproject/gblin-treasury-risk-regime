@@ -74,6 +74,7 @@ async function main(): Promise<void> {
     ["get_transaction_status", { hash: "0x366dc55dfe1fc3a1eb662a245ed7f5e6b54c68a0621124eafe5cf14188a2503c" }],
     ["get_transaction_status", { hash: "0x" + "ab".repeat(32) }],
     ["get_nav_history", { interval: "hour", points: 4 }],
+    ["plan_treasury", { wallet_address: HOLDER, daily_burn_usd: 5, days: 7, trial_usdc: 5 }],
     [
       "verify_gblin_authorization",
       {

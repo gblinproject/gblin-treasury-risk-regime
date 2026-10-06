@@ -57,7 +57,7 @@ const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // Bumped on EVERY deploy. The authoritative identifier of the surface remains
 // manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.14" };
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.17" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -145,7 +145,7 @@ const NATIVE_TOOLS = [
   {
     name: "risk.regime",
     description:
-      "Current BTC/ETH risk regime (calm | elevated | crash) with a suggested posture, read live from GBLIN's on-chain Crash Shield on Base (60s cache). Free and unsigned; a signed, verifiable-offline version is a paid x402 endpoint (resource gblin://howto/attestation).",
+      "Current BTC/ETH risk regime (calm | elevated | crash) and the matching risk posture, read live from GBLIN's on-chain Crash Shield on Base (60-second cache). Free and unsigned; a signed version that verifies offline is a separate paid x402 HTTP endpoint.",
     inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
     annotations: { title: "Market risk regime (live, free)", ...RO },
     outputSchema: {
@@ -183,7 +183,7 @@ const NATIVE_TOOLS = [
   {
     name: "risk.attestation_sample",
     description:
-      "Static, permanently expired sample of the signed Risk Attestation (sample:true), same fields and EIP-712 schema as the paid one. Use it to build and test a parser/verifier.",
+      "Static, permanently expired sample of the signed Risk Attestation (sample: true), with the same fields and EIP-712 schema as the signed one, for building and testing parsers and verifiers.",
     inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
     annotations: { title: "Attestation sample (free, expired)", ...RO },
     outputSchema: {
@@ -246,7 +246,7 @@ const NATIVE_TOOLS = [
   {
     name: "receipts.seal",
     description:
-      "Append the HASHES of an AI action to GBLIN's public RFC 6962 transparency log and return a portable receipt: Ed25519 signature, inclusion proof, operator-signed C2SP checkpoint, plus the latest on-chain anchor (EAS on Base, daily). mode=demo (the only mode over MCP): 5 seals/day/IP, receipts marked demo:true. Unlimited seals are a paid x402 HTTP endpoint (resource gblin://howto/seal). Provenance is self-reported: the receipt proves existence and time of the record, not that the action happened. The action/agent_id/tool/meta strings are PUBLISHED in the log: identifiers only, never secrets. Fields not listed here are ignored and NOT recorded.",
+      "Appends the hashes of an AI action to GBLIN's public RFC 6962 transparency log and returns a portable receipt: Ed25519 signature, inclusion proof, operator-signed C2SP checkpoint, and the latest on-chain anchor (EAS on Base, daily). Demo mode only over MCP: 5 seals per day per IP, receipts marked demo: true; unlimited sealing is a separate paid x402 HTTP endpoint. Provenance is self-reported: a receipt proves that the record existed at that time, not that the action happened. The action, agent_id, tool and meta strings are published in the log exactly as given. Fields not listed in the schema are ignored and not recorded.",
     inputSchema: {
       type: "object",
       properties: {
@@ -279,10 +279,10 @@ const NATIVE_TOOLS = [
   },
   {
     name: "receipts.verify",
-    description: "Verify a gblin-receipt/v1 JSON with pure math (no log lookup, no trust in this server): leaf hash, Ed25519 signature, RFC 6962 inclusion proof, C2SP checkpoint signature, verifier-key hash. Same checks as the zero-dependency verify-receipt.mjs you can run offline. For the extra on-chain-anchor consistency check use GET /v1/verify/:index.",
+    description: "Verifies a gblin-receipt/v1 JSON with pure math, without a log lookup and without trusting this server: leaf hash, Ed25519 signature, RFC 6962 inclusion proof, C2SP checkpoint signature and verifier-key hash. These are the same checks as the zero-dependency verify-receipt.mjs script that runs offline; the consistency check against the on-chain anchor is available separately at GET /v1/verify/:index.",
     inputSchema: {
       type: "object",
-      properties: { receipt: { type: "object", description: "The receipt JSON as returned by receipts.seal / receipts.get / GET /v1/receipt/:i (bare or wrapped in {receipt})" } },
+      properties: { receipt: { type: "object", description: "A gblin-receipt/v1 JSON, bare or wrapped in {receipt}, as issued by the receipts log (also served at GET /v1/receipt/:i)" } },
       required: ["receipt"],
       additionalProperties: false,
     },

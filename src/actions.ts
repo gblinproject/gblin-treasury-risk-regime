@@ -227,7 +227,7 @@ const PrepareSchema = z.object({
 export const PREPARE_ACTION_DEFINITION = {
   name: "prepare_action",
   description:
-    "Build the unsigned transactions for any operation on the GBLIN vault, in the order to send them. Actions: mint_with_eth (amount in ETH), mint_with_weth (amount in WETH), mint_with_usdc (amount in USDC, through the Zap), redeem_in_kind (amount in shares; pro rata basket tokens, no fee, no price feed), exit_to_eth (amount in shares, through the Zap, all or nothing), exit_to_usdc (amount = the USDC you need), bid (trade with the rebalancing auction; row optional, the largest gap by default). Every output bound is non-zero and every step through the vault or the Zap carries its gas limit. Nothing is signed or sent: simulate the steps with preview_steps, then send them from the wallet.",
+    "Builds the unsigned transactions for an operation on the GBLIN vault, in the order they are sent. Actions: mint_with_eth (amount in ETH), mint_with_weth (amount in WETH), mint_with_usdc (amount in USDC, through the Zap), redeem_in_kind (amount in shares; pro rata basket tokens, no fee, no price feed), exit_to_eth (amount in shares, through the Zap, all or nothing), exit_to_usdc (amount = the USDC needed), bid (trade with the rebalancing auction; row optional, the largest gap by default). Every output bound is non-zero and every step through the vault or the Zap carries its gas limit. Nothing is signed or sent: the steps are returned to the caller.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -474,7 +474,7 @@ const PreviewSchema = z.object({
 export const PREVIEW_STEPS_DEFINITION = {
   name: "preview_steps",
   description:
-    "Simulate a list of transactions in sequence against the latest Base block, as if the wallet sent them one after the other, before anything is signed. Each step sees the state the previous ones left (an approval before a mint works). Returns, per step, whether it would succeed, the gas it uses, whether the gas limit it carries is enough, and the decoded revert reason with a hint when it fails; and the net token and ETH movements for the wallet. Pass the steps exactly as prepare_action, invest_usdc_to_gblin or swap_gblin_to_usdc_jit return them. State can change before your transactions land: a successful preview is evidence, not a guarantee.",
+    "Simulates a list of transactions in sequence against the latest Base block, as if the wallet sent them one after the other, before anything is signed. Each step sees the state the previous ones left (an approval before a mint works). Accepts steps with target or to, calldata or data, and optional value and gas. Returns, per step, whether it would succeed, the gas it uses, whether the gas limit it carries is enough, and the decoded revert reason when it fails; and the net token and ETH movements for the wallet. State can change before transactions land: a successful preview is evidence, not a guarantee.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -663,7 +663,7 @@ const TxStatusSchema = z.object({ hash: z.string().regex(/^0x[0-9a-fA-F]{64}$/, 
 export const TX_STATUS_DEFINITION = {
   name: "get_transaction_status",
   description:
-    "Report what a sent Base transaction did: pending, succeeded, reverted or not found; its block and confirmations; the fee paid; the net token movements for the sender (GBLIN shares minted or redeemed, USDC, basket tokens); and, when it reverted, the decoded reason. Use it after sending the steps from prepare_action to confirm each one before the next.",
+    "Reports what a sent Base transaction did: pending, succeeded, reverted or not found; its block and confirmations; the fee paid; the net token movements for the sender (GBLIN shares minted or redeemed, USDC, basket tokens); and, when it reverted, the decoded reason.",
   inputSchema: {
     type: "object" as const,
     properties: { hash: { type: "string", pattern: "^0x[0-9a-fA-F]{64}$", description: "The transaction hash." } },
@@ -734,7 +734,7 @@ const HistorySchema = z.object({
 export const NAV_HISTORY_DEFINITION = {
   name: "get_nav_history",
   description:
-    "NAV per GBLIN share over time, read from the chain at past blocks, beside the ETH/USD and BTC/USD oracle prices the vault itself uses, with the change of each over the window and the NAV's largest drawdown. History starts at the deployment of the vault in service. Use it to judge how the index behaved against holding ETH or BTC over the same span.",
+    "NAV per GBLIN share over time, read from the chain at past blocks, beside the ETH/USD and BTC/USD oracle prices the vault itself uses, with the change of each over the window and the NAV's largest drawdown. The series starts at the deployment of the vault in service and can be compared with holding ETH or BTC over the same span.",
   inputSchema: {
     type: "object" as const,
     properties: {

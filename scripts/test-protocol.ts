@@ -67,7 +67,7 @@ async function main(): Promise<void> {
 
   // ── tools ────────────────────────────────────────────────────────────────
   const tools = (await rpc("tools/list")).result?.tools ?? [];
-  check("lists twenty tools", tools.length === 20, String(tools.length));
+  check("lists twenty-one tools", tools.length === 21, String(tools.length));
   check("every tool carries a title", tools.every((t: any) => typeof t.annotations?.title === "string"));
   const state = await rpc("tools/call", { name: "get_treasury_state", arguments: {} });
   check("a tool result carries structuredContent", typeof state.result?.structuredContent === "object");

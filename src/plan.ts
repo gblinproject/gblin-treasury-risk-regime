@@ -48,7 +48,7 @@ const PlanSchema = z
 export const PLAN_TREASURY_DEFINITION = {
   name: "plan_treasury",
   description:
-    "Idle USDC to a reviewable plan in one call: operating cash = max(reserve_usd, daily_burn_usd × days), the surplus above it, a simulation of minting that surplus into GBLIN at NAV (fees read live from the vault, estimated exit value today, round-trip cost), the same simulation for a trial amount (100 USDC by default), the blockers (crash shield, redemption cooldown, ETH for the exit) and the tools to call after a human confirms. Reads only: nothing is executed and nothing is advised. GBLIN is crypto exposure (cbBTC, WETH, USDC), not cash and not yield.",
+    "Turns idle USDC into a reviewable plan in one call: operating cash = max(reserve_usd, daily_burn_usd x days), the surplus above it, a simulation of minting that surplus into GBLIN at NAV (fees read live from the vault, estimated exit value today, round-trip cost), the same simulation for a trial amount (100 USDC by default), and the blockers (Crash Shield, redemption cooldown, ETH for the exit). Read-only: nothing is executed and nothing is advised. GBLIN is crypto exposure (cbBTC, WETH, USDC), not cash and not yield.",
   inputSchema: {
     type: "object" as const,
     properties: {

@@ -112,7 +112,7 @@ async function corpus(tools, cachedFetch) {
 export const SEARCH_TOOL = {
   name: "search",
   description:
-    "Search GBLIN's documentation and live state and return matching documents: the agent API summary, the protocol's README and documents (governance, deployments, review record), the MCP server and library READMEs, the public pages, one card per MCP tool, and a snapshot of the live vault state. Returns {results: [{id, title, url}]}; pass an id to fetch for the full text. Read-only and free.",
+    "Searches GBLIN's documentation and live state and returns matching documents: the agent API summary, the protocol's README and documents (governance, deployments, review record), the MCP server and library READMEs, the public pages, one card per MCP tool, and a snapshot of the live vault state. Returns {results: [{id, title, url}]}, where each id identifies a full document. Read-only and free.",
   inputSchema: {
     type: "object",
     properties: { query: { type: "string", description: "What to look for, in plain words." } },
@@ -139,10 +139,10 @@ export const SEARCH_TOOL = {
 export const FETCH_TOOL = {
   name: "fetch",
   description:
-    "Return the full text of one document found with search: {id, title, text, url, metadata}. Documents are the protocol's public documentation, the tool cards and the live vault state. Read-only and free.",
+    "Returns the full text of one GBLIN document by its id: {id, title, text, url, metadata}. Documents are the protocol's public documentation, the tool cards and the live vault state. Read-only and free.",
   inputSchema: {
     type: "object",
-    properties: { id: { type: "string", description: "A document id returned by search." } },
+    properties: { id: { type: "string", description: "A GBLIN document id, such as protocol-readme." } },
     required: ["id"],
     additionalProperties: false,
   },

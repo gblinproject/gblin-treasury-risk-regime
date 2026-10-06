@@ -176,7 +176,7 @@ async function resolveValue(args: Record<string, unknown>): Promise<{ value: big
 export const PREPARE_PAYMENT_TOOL = {
   name: "prepare_gblin_payment",
   description:
-    "Build a gasless GBLIN payment. The vault's share token implements EIP-3009, so the holder signs an authorization and anybody can carry it on chain: the payer needs no ETH. Returns the EIP-712 message to sign (its domain is read from the token, not assumed), the calldata that carries the signed authorization, and the x402 'exact' payload for paying an HTTP endpoint in GBLIN. Use method 'receive' when paying a known recipient: only that recipient can submit it, so nobody can front-run the transfer. Use 'transfer' for an x402 facilitator, which submits on the seller's behalf. With relay: true it also prepares the fee authorization for relay_gblin_payment, for when nobody else will carry the payment. No private key is requested, held or transmitted: the signature is produced by the caller's own wallet.",
+    "Builds a gasless GBLIN payment. The vault's share token implements EIP-3009, so the holder signs an authorization and anybody can carry it on chain: the payer needs no ETH. Returns the EIP-712 message to sign (its domain is read from the token, not assumed), the calldata that carries the signed authorization, and the x402 'exact' payload for paying an HTTP endpoint in GBLIN. Method 'receive' lets only the named recipient submit the authorization, so nobody can front-run the transfer; method 'transfer' suits an x402 facilitator, which submits on the seller's behalf. With relay: true it also returns a second authorization that pays a relayer's fee in GBLIN. No private key is requested, held or transmitted: the signature is produced by the caller's own wallet.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -196,7 +196,7 @@ export const PREPARE_PAYMENT_TOOL = {
       relay: {
         type: "boolean",
         description:
-          "true when nobody else will carry the payment on chain: also prepares the relay fee authorization, paid in GBLIN at the live NAV, for relay_gblin_payment. Forces method 'transfer'.",
+          "true when nobody else will carry the payment on chain: also prepares a second authorization that pays GBLIN's relay fee in GBLIN at the live NAV. Forces method 'transfer'.",
       },
     },
     required: ["from", "to"],
@@ -362,7 +362,7 @@ export async function handlePreparePayment(args: Record<string, unknown>): Promi
 export const RELAY_PAYMENT_TOOL = {
   name: "relay_gblin_payment",
   description:
-    "Have GBLIN's relay carry a signed GBLIN payment on chain for a payer that holds no ETH. Pass the payment and the relay fee, each as { authorization, signature }, both prepared by prepare_gblin_payment with relay: true and signed by the payer's wallet. The relay checks both against the chain, simulates them and submits them in one transaction through Multicall3: either both settle or neither does. The fee is paid in GBLIN at the live NAV. Returns the transaction hash and its outcome. This moves funds: run it only with authorizations the payer meant to sign.",
+    "GBLIN's relay carries a signed GBLIN payment on chain for a payer that holds no ETH. Takes the payment and the relay fee, each as { authorization, signature }, both signed by the payer's wallet. The relay checks both against the chain, simulates them and submits them in one transaction through Multicall3: either both settle or neither does. The fee is paid in GBLIN at the live NAV. Returns the transaction hash and its outcome. This tool moves funds: it carries the authorizations exactly as signed.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -374,7 +374,7 @@ export const RELAY_PAYMENT_TOOL = {
       },
       fee: {
         type: "object",
-        description: "{ authorization, signature } of the relay fee, from prepare_gblin_payment's relay block.",
+        description: "{ authorization, signature } of the relay fee, as prepared with relay: true and signed by the payer.",
         properties: { authorization: { type: "object" }, signature: { type: "string", pattern: "^0x[0-9a-fA-F]+$" } },
         required: ["authorization", "signature"],
       },
@@ -415,7 +415,7 @@ export async function handleRelayPayment(args: Record<string, unknown>): Promise
 export const VERIFY_AUTHORIZATION_TOOL = {
   name: "verify_gblin_authorization",
   description:
-    "Check a signed GBLIN authorization against the chain before spending gas on it. Recovers the signer from the EIP-712 digest (and asks the wallet itself through ERC-1271 when the payer is a contract), then checks the validity window against on-chain time, whether the nonce has already been used or cancelled, and whether the payer still holds the amount. Returns a verdict and the ready calldata when it would settle, the failing reason when it would not. This is the same set of checks an x402 facilitator runs, so a 'would_settle' verdict here means the payment is good to carry.",
+    "Checks a signed GBLIN authorization against the chain before any gas is spent on it. Recovers the signer from the EIP-712 digest (and asks the wallet itself through ERC-1271 when the payer is a contract), then checks the validity window against on-chain time, whether the nonce has already been used or cancelled, and whether the payer still holds the amount. Returns a verdict and the ready calldata when it would settle, the failing reason when it would not. These are the checks an x402 facilitator runs, so a 'would_settle' verdict means the payment can be carried.",
   inputSchema: {
     type: "object" as const,
     properties: {

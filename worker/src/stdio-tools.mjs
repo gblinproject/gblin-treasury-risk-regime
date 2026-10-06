@@ -5,8 +5,9 @@
  * cannot drift: a fix there is a fix here at the next deploy. Every handler returns a complete MCP
  * tool result (content, structuredContent, isError), which is passed through untouched.
  *
- * The stdio names are accepted as unlisted aliases, because the tools' own descriptions refer to each
- * other by those names ("simulate with preview_steps").
+ * The stdio names are accepted as unlisted aliases, so callers built against the package keep working.
+ * Descriptions come from the package unchanged: each one states what the tool does and returns, without
+ * naming other tools or telling the model how to behave.
  */
 
 import { TOOL_DEFINITIONS, TOOL_HANDLERS } from "../../src/tools.ts";

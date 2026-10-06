@@ -142,7 +142,22 @@ async function main(): Promise<void> {
   const zapStep = (lowGas.data.steps ?? [])[1] ?? {};
   check("a starved gas limit is reported as not enough", lowGas.ok && zapStep.gas_limit_enough === false, lowGas.text.slice(0, 300));
   check("it names the cause: out of gas", /out of gas/i.test(String(zapStep.error)), String(zapStep.error));
-  check("it recommends at least what the Zap exit needs", Number(zapStep.recommended_gas_limit) >= 1_013_267, String(zapStep.recommended_gas_limit));
+  // The recommended limit is the minimal passing limit on the current state plus a tenth: prove it by sending
+  // the exit with exactly that limit, instead of comparing it with a number measured on an older state.
+  const recommended = Number(zapStep.recommended_gas_limit);
+  check("it recommends a limit above the starved one", recommended > 300_000, String(recommended));
+  const sized = (exit.data.steps as Step[]).map((s) => (s.gas ? { ...s, gas: String(recommended) } : s));
+  try {
+    const sent = await send(sized);
+    let allOk = true;
+    for (const hash of sent) {
+      const st = await call(handleTransactionStatus, { hash });
+      if (!(st.ok && st.data.status === "success")) allOk = false;
+    }
+    check("the Zap exit succeeds with exactly the recommended limit", allOk, String(recommended));
+  } catch (err) {
+    check("the Zap exit succeeds with exactly the recommended limit", false, (err as Error).message.split("\n")[0]);
+  }
 
   // The same Zap step with no gas at all: the preview must recommend a limit that really passes.
   const bare = (exit.data.steps as Step[]).map(({ gas: _g, ...rest }) => rest);

@@ -3,6 +3,49 @@
 All notable changes to `@gblin-protocol/mcp-server` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.6.4] - 2026-10-06
+
+### Changed
+- Tool descriptions state what each tool does and returns. They no longer name other tools, give the model
+  instructions ("use this before..."), or point to resources for further instructions. Behaviour, names,
+  parameters and results are unchanged. Parameter descriptions follow the same rule.
+- `get_market_risk_regime` and `invest_usdc_to_gblin` drop statements that read as advice: a third-party
+  adoption claim and a rule of thumb on how much idle USDC to convert.
+
+### Fixed
+- The protocol test counts 21 tools, and the output-schema test exercises `plan_treasury`.
+- The fork test of `preview_steps` sends the Zap exit with exactly the recommended gas limit and checks that
+  it succeeds, instead of comparing the limit with a figure measured on an older state.
+
+## [0.6.3] - 2026-10-01
+
+### Added
+- Release workflow: a push to `main` with a new version publishes the npm package (trusted publishing), the
+  MCP registry entry and the GitHub release.
+
+## [0.6.2] - 2026-10-01
+
+### Changed
+- The hosted server moves to `https://mcp.gblin.digital/mcp` (README, `server.json` remote, and the hosted
+  endpoint resource).
+
+## [0.6.1] - 2026-09-30
+
+### Added
+- Every prepared step also carries `to`, `data` and `chainId` (8453) beside `target` and `calldata`, the field
+  names of wallet batch APIs such as EIP-5792 `wallet_sendCalls`. Both spellings are kept.
+
+### Fixed
+- Tools without arguments declare `required: []` in their input schema, which some clients expect.
+
+## [0.6.0] - 2026-09-30
+
+### Added
+- `plan_treasury`: idle USDC to a reviewable plan (operating cash, surplus, simulated mint at NAV with live fees,
+  exit value today, blockers), with an output schema. Reads only; nothing is executed or advised.
+- Without `GBLIN_RPC_URL`, reads fall back across five public Base RPCs in order, so one provider rate-limiting
+  a burst no longer fails the call. An explicit `GBLIN_RPC_URL` is still used alone.
+
 ## [0.5.2] - 2026-09-23
 
 ### Fixed

@@ -68,7 +68,7 @@ async function workerFetch(path: string, init?: RequestInit): Promise<Response> 
 export const SEAL_ACTION_DEMO_DEFINITION = {
   name: "seal_action_demo",
   description:
-    "Seal the HASHES of an AI action into GBLIN's public append-only RFC 6962 transparency log (FREE demo, 5/day/IP, receipt marked demo:true). Returns a portable receipt: Ed25519 signature + Merkle inclusion proof + operator-signed C2SP checkpoint, offline-verifiable forever with the zero-dependency verify-receipt.mjs. Input/output go in as sha256 HASHES only; the action label and metadata you send are published in the public log. Unlimited seals cost $0.0045 via x402 — see how_to_seal_paid.",
+    "Seals the hashes of an AI action into GBLIN's public append-only RFC 6962 transparency log (free demo, 5 per day per IP, receipt marked demo: true). Returns a portable receipt: Ed25519 signature, Merkle inclusion proof and operator-signed C2SP checkpoint, verifiable offline with the zero-dependency verify-receipt.mjs. Input and output go in as sha256 hashes only; the action label and metadata are published in the public log. Unlimited sealing is a separate paid x402 HTTP endpoint (0.0045 USDC per seal).",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -189,7 +189,7 @@ async function handleGetReceipt(args: unknown) {
 export const HOW_TO_SEAL_PAID_DEFINITION = {
   name: "how_to_seal_paid",
   description:
-    "Instructions for UNLIMITED paid seals ($0.0045 USDC per seal via x402 on Base) in GBLIN's AI Action Receipts transparency log — endpoint, body schema, payment flow, and how to verify receipts offline. Free demo alternative: seal_action_demo (5/day/IP).",
+    "Returns the reference for unlimited paid seals (0.0045 USDC per seal via x402 on Base) in GBLIN's AI Action Receipts transparency log: endpoint, body schema, payment flow, and offline verification of receipts. The free demo allows 5 seals per day per IP.",
   inputSchema: { type: "object" as const, properties: {}, required: [], additionalProperties: false },
 };
 
