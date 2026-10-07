@@ -41,7 +41,7 @@ Every tool is free. The server never charges: revenue comes from the on-chain pr
 | Vault | [`0xc2181d975c05c8c724b334bcED0764c0b86B1D53`](https://basescan.org/address/0xc2181d975c05c8c724b334bcED0764c0b86B1D53) | The ERC-20 share and the basket. Mints at NAV, redeems in kind, rebalances by Dutch auction, accepts payments by signature (EIP-3009). Never swaps. |
 | Lens | [`0xfCFea8027019E8551A1f09AD91532471F5D26f61`](https://basescan.org/address/0xfCFea8027019E8551A1f09AD91532471F5D26f61) | Read-only views beside the vault: quotes, configuration, basket rows, auction state. |
 | Zap | [`0x0E9D6Ceb6D313b021622C121Cda9C62e86e60200`](https://basescan.org/address/0x0E9D6Ceb6D313b021622C121Cda9C62e86e60200) | The only contract that swaps: mints with any token, exits to ETH by redeeming in kind and selling every leg, all or nothing. |
-| Timelock | [`0x6aBeC8716fFeEcf7C3D6e68255b4797113E8e5Dd`](https://basescan.org/address/0x6aBeC8716fFeEcf7C3D6e68255b4797113E8e5Dd) | 48-hour minimum delay, 14-day grace period, open executor. Proposer and canceller roles are held by separate addresses. |
+| Timelock | [`0x6aBeC8716fFeEcf7C3D6e68255b4797113E8e5Dd`](https://basescan.org/address/0x6aBeC8716fFeEcf7C3D6e68255b4797113E8e5Dd) | 48-hour minimum delay, 14-day grace period, open executor. Proposer and canceller roles are held by a 2-of-3 Safe (`0xc7AeFcfC871bA51FA2ddfE3117b69AC055C98eF1`). |
 
 Previous deployments (`0x36C81d7E1966310F305eA637e761Cf77F90852f0`, `0x38DcDB3A381677239BBc652aed9811F2f8496345`) are superseded. Nothing is read from them; holders migrate through the web app.
 
