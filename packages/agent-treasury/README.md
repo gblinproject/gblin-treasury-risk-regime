@@ -77,6 +77,6 @@ These are the same steps the GBLIN MCP server prepares (`prepare_action`: `mint_
 
 ## Addresses (Base)
 
-Vault `0xc2181d975c05c8c724b334bcED0764c0b86B1D53` · Lens `0xfCFea8027019E8551A1f09AD91532471F5D26f61` · Zap `0x0E9D6Ceb6D313b021622C121Cda9C62e86e60200` · USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`. Sources are verified on Basescan and Sourcify; the vault is owned by a 48-hour timelock. Audited by Soken on 9 October 2026 (commit 311bd91: 0 critical, 0 high, 0 medium, 2 low, 14 informational); [report](https://gblin.digital/audits/2026-10-09_soken_security_review.pdf), and the [audits](https://github.com/gblinproject/GBLIN-Protocol/tree/main/audits) directory for the status of every finding and the internal test campaigns.
+Vault `0xc2181d975c05c8c724b334bcED0764c0b86B1D53` · Lens `0xfCFea8027019E8551A1f09AD91532471F5D26f61` · Zap `0x0E9D6Ceb6D313b021622C121Cda9C62e86e60200` · USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`. Sources are verified on Basescan and Sourcify; the vault is owned by a 48-hour timelock. No paid third-party audit: see the [audits](https://github.com/gblinproject/GBLIN-Protocol/tree/main/audits) directory for what has been run and what has not.
 
 Security contact: info@gblin.digital
