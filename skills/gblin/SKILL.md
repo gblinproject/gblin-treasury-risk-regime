@@ -155,9 +155,10 @@ time-weighted average: wait and prepare again, or exit in kind.
   weights after large falls; it does not guarantee any outcome.
 - The vault is owned by a 48-hour timelock that can change parameters only
   within bounds written in the contract. Check it live with `governance`.
-- No paid third-party audit and no formal verification. Unit, fuzz, invariant
-  and fork tests, static analysis, symbolic execution and line-by-line reviews
-  are listed in `audits/README.md` of GBLIN-Protocol.
+- Audited by Soken on 9 October 2026 (commit 311bd91): 0 critical, 0 high,
+  0 medium, 2 low, 14 informational. Report:
+  https://gblin.digital/audits/2026-10-09_soken_security_review.pdf. No formal
+  verification. An audit is a point-in-time assessment, not a guarantee.
 
 ## Links
 

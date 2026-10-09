@@ -28,6 +28,7 @@ import { catalogTick, catalogReport, catalogFull, observatoryPage, observatoryJs
 import { vmWatchDue, vmWatchTick, vmWatchTest } from "./vmwatch.mjs";
 import { legWatchTick } from "./legwatch.mjs";
 import { publishAuctionOrders, publisherStatus } from "./auctionpublisher.mjs";
+import { vaultEventsTick, vaultMints, vaultAuctionFills } from "./vaultevents.mjs";
 // Witness (./witness.mjs): cosigns the checkpoints of third-party transparency
 // logs (C2SP tlog-cosignature v1). Cost is one read plus one signature per tick,
 // with no chain access at all. Without the WITNESS_KEY secret the feature stays
@@ -57,7 +58,7 @@ const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // Bumped on EVERY deploy. The authoritative identifier of the surface remains
 // manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.17" };
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.18" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -1947,6 +1948,18 @@ export default {
     }
 
     // Aggregate usage of the free surface. Free to read, like everything else here.
+    if ((url.pathname === "/vault/mints" || url.pathname === "/vault/auction-fills") &&
+        (request.method === "GET" || request.method === "HEAD")) {
+      const asked = Number(url.searchParams.get("limit"));
+      const limit = Number.isFinite(asked) && asked >= 0 ? Math.min(Math.trunc(asked), 200) : 20;
+      try {
+        const body = url.pathname === "/vault/mints" ? await vaultMints(env, limit) : await vaultAuctionFills(env, limit);
+        return json(body, body.error ? 503 : 200, { "cache-control": "public, max-age=120" });
+      } catch {
+        return json({ error: "index unavailable" }, 503);
+      }
+    }
+
     if (url.pathname === "/mcp/usage" && (request.method === "GET" || request.method === "HEAD")) {
       const days = Math.min(60, Math.max(1, Number(url.searchParams.get("days")) || 14));
       return json(await recentUsage(env, days), 200, { "cache-control": "public, max-age=120" });
@@ -1996,6 +2009,12 @@ export default {
     if (event && event.cron === "* * * * *") {
       const rpcs = env.GBLIN_RPC_URL ? [env.GBLIN_RPC_URL, ...FALLBACK_RPCS] : FALLBACK_RPCS;
       ctx.waitUntil(publishAuctionOrders(env, rpcs).catch((e) => console.error("auction publisher:", e && e.message)));
+      return;
+    }
+    // Every five minutes: extend the index of the vault's events. Its own trigger, so its reads never
+    // share a subrequest budget with the seals below.
+    if (event && event.cron === "*/5 * * * *") {
+      ctx.waitUntil(vaultEventsTick(env).then((r) => { if (r && r.error) console.error("vault events:", r.error); }));
       return;
     }
     ctx.waitUntil(flushUsageNow(env, true)); // any batch left over on this isolate
