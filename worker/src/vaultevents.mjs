@@ -17,7 +17,8 @@
  * anyone from the same logs.
  *
  * BUDGET: one block-number read plus at most MAX_READS_PER_RUN log reads per run, one D1 read and one
- * D1 batch. Once caught up, a run reads one window (~150 blocks every five minutes).
+ * D1 batch. Once caught up, a run reads the ~150 blocks produced in five minutes: one window from a
+ * public source, or fifteen from the private endpoint.
  */
 
 export const VAULT = "0xc2181d975c05c8c724b334bcED0764c0b86B1D53";
@@ -31,16 +32,40 @@ export const AUCTION_FILL_TOPIC = "0x2976be3a749ae31c32a5c344e8ca41a06e8edbabcc8
 const KIND_BY_TOPIC = { [MINTED_TOPIC]: "minted", [AUCTION_FILL_TOPIC]: "auction_fill" };
 
 /** Public endpoints and the largest log range each accepts on its free tier. */
-export const LOG_SOURCES = [
+export const LOG_SOURCES = Object.freeze([
   { url: "https://gateway.tenderly.co/public/base", window: 1000 },
   { url: "https://base.drpc.org", window: 100 },
-];
+]);
+
+/**
+ * The public sources first, then the Worker's private endpoint when one is configured. The public
+ * gateways rate-limit by address, and Workers share their outbound addresses, so they can refuse
+ * every request for hours; the private endpoint keeps the index moving meanwhile.
+ */
+function logSources(env) {
+  const url = typeof env?.GBLIN_RPC_URL === "string" ? env.GBLIN_RPC_URL.trim() : "";
+  return url ? [...LOG_SOURCES, { url, window: PRIVATE_WINDOW }] : [...LOG_SOURCES];
+}
 /** Blocks left behind the head, so a log is stored only once its block is settled. */
 const CONFIRMATIONS = 10;
-const MAX_READS_PER_RUN = 12;
+/**
+ * Endpoints asked only for the chain head when no log source answers it. They serve recent blocks
+ * but cap or refuse log ranges, so they never read windows.
+ */
+const HEAD_SOURCES = ["https://base-rpc.publicnode.com", "https://mainnet.base.org"];
+/**
+ * Log reads per run. Workers on the free plan may make 50 subrequests per invocation; this leaves room
+ * for the head and timestamp reads. At the private endpoint's 10-block window it still reads more
+ * blocks per run than the chain produces in five minutes, so a backlog shrinks on every run.
+ */
+const MAX_READS_PER_RUN = 36;
+/** Largest log range the private endpoint (`GBLIN_RPC_URL`) accepts on its plan. */
+const PRIVATE_WINDOW = 10;
 const TIMEOUT_MS = 12_000;
 /** The index counts as current when it is within this many blocks of the head it last saw (~40 min). */
 const SYNCED_LAG_BLOCKS = 1200;
+/** ...and when its last successful run is at most this old: a stalled run also leaves `head_seen` behind. */
+const SYNCED_MAX_AGE_MS = 40 * 60 * 1000;
 const STATE_NAME = "vault";
 
 async function rpc(url, method, params) {
@@ -56,16 +81,26 @@ async function rpc(url, method, params) {
   return body.result;
 }
 
-async function chainHead() {
-  for (const s of LOG_SOURCES) {
+function host(url) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "source";
+  }
+}
+
+async function chainHead(sources) {
+  const errors = [];
+  for (const url of [...sources.map((s) => s.url), ...HEAD_SOURCES]) {
     try {
-      const n = Number(BigInt(await rpc(s.url, "eth_blockNumber", [])));
+      const n = Number(BigInt(await rpc(url, "eth_blockNumber", [])));
       if (Number.isSafeInteger(n) && n > DEPLOY_BLOCK) return n;
-    } catch {
-      // next source
+      errors.push(`${host(url)}: unexpected head`);
+    } catch (e) {
+      errors.push(`${host(url)}: ${e?.message ?? "failed"}`);
     }
   }
-  throw new Error("no source returned the chain head");
+  throw new Error(`no source returned the chain head (${errors.join("; ")})`);
 }
 
 /** Logs of both events in [from, to], from the first source that answers for a range it accepts. */
@@ -97,11 +132,11 @@ export function toRow(log) {
 }
 
 /** Block timestamps for rows whose source did not include one (one header read per distinct block). */
-async function fillTimestamps(rows) {
+async function fillTimestamps(rows, sources) {
   const missing = [...new Set(rows.filter((r) => r.ts === null).map((r) => r.block))];
   const found = {};
   for (const b of missing) {
-    for (const s of LOG_SOURCES) {
+    for (const s of sources) {
       try {
         const blk = await rpc(s.url, "eth_getBlockByNumber", ["0x" + b.toString(16), false]);
         if (blk?.timestamp) { found[b] = Number(BigInt(blk.timestamp)); break; }
@@ -127,16 +162,22 @@ export async function vaultEventsTick(env) {
   if (!db) return { skipped: "no database binding" };
   try {
     const state = await readState(db);
-    const head = await chainHead();
+    const sources = logSources(env);
+    const head = await chainHead(sources);
     const target = head - CONFIRMATIONS;
     let cursor = state.indexed_to;
     const rows = [];
     let reads = 0;
-    let lastError = null;
+    const errors = new Set();
+    // A source that answers 429 is rate-limiting this Worker's address: asking it again in the same
+    // run only spends the read budget, so it is skipped until the next run.
+    const limited = new Set();
 
     while (cursor < target && reads < MAX_READS_PER_RUN) {
       let stored = false;
-      for (const s of LOG_SOURCES) {
+      const usable = sources.filter((s) => !limited.has(s.url));
+      if (usable.length === 0) break;
+      for (const s of usable) {
         const from = cursor + 1;
         const to = Math.min(target, from + s.window - 1);
         reads += 1;
@@ -150,7 +191,9 @@ export async function vaultEventsTick(env) {
           stored = true;
           break;
         } catch (e) {
-          lastError = e?.message ?? "read failed";
+          const message = e?.message ?? "read failed";
+          errors.add(`${host(s.url)}: ${message}`);
+          if (message === "HTTP 429") limited.add(s.url);
           if (reads >= MAX_READS_PER_RUN) break;
         }
       }
@@ -166,10 +209,10 @@ export async function vaultEventsTick(env) {
         "INSERT INTO vault_index_state (name, indexed_to, head_seen, updated_at) VALUES (?, ?, ?, ?) " +
         "ON CONFLICT(name) DO UPDATE SET head_seen = excluded.head_seen, updated_at = excluded.updated_at",
       ).bind(STATE_NAME, cursor, head, new Date().toISOString()).run();
-      return { indexed_to: cursor, head, new_rows: 0, error: lastError };
+      return { indexed_to: cursor, head, new_rows: 0, error: errors.size ? [...errors].join("; ") : null };
     }
 
-    await fillTimestamps(rows);
+    await fillTimestamps(rows, sources);
     const insert = db.prepare(
       "INSERT OR IGNORE INTO vault_events (block, log_index, tx, kind, topics, data, ts) VALUES (?, ?, ?, ?, ?, ?, ?)",
     );
@@ -180,7 +223,7 @@ export async function vaultEventsTick(env) {
       "updated_at = excluded.updated_at",
     ).bind(STATE_NAME, cursor, head, new Date().toISOString()));
     await db.batch(statements);
-    return { indexed_to: cursor, head, new_rows: rows.length, error: lastError };
+    return { indexed_to: cursor, head, new_rows: rows.length, error: errors.size ? [...errors].join("; ") : null };
   } catch (e) {
     return { error: e?.message ?? "run failed" };
   }
@@ -194,6 +237,11 @@ function topicAddress(t) {
   return "0x" + String(t).slice(26);
 }
 
+function fresh(updatedAt) {
+  const t = Date.parse(updatedAt ?? "");
+  return Number.isFinite(t) && Date.now() - t <= SYNCED_MAX_AGE_MS;
+}
+
 function coverage(state) {
   const lag = state.head_seen ? Math.max(0, state.head_seen - state.indexed_to) : null;
   return {
@@ -201,7 +249,7 @@ function coverage(state) {
     indexed_to_block: state.indexed_to,
     head_seen: state.head_seen,
     lag_blocks: lag,
-    synced: lag !== null && lag <= SYNCED_LAG_BLOCKS,
+    synced: lag !== null && lag <= SYNCED_LAG_BLOCKS && fresh(state.updated_at),
     updated_at: state.updated_at,
   };
 }
