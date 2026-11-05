@@ -3,6 +3,14 @@
 All notable changes to `@gblin-protocol/mcp-server` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.6.5] - 2026-11-05
+
+### Fixed
+- `get_nav_history` spaces its points in time (one hour or one day) and derives each point's time from its
+  block number with both Base block times: two seconds up to block 53,556,126 and 200 milliseconds from block
+  53,556,127. It previously assumed two-second blocks throughout, so hourly points fell six minutes apart and
+  their times were wrong. The helper lives in `src/blocktime.ts`, and the tool no longer reads a block header.
+
 ## [0.6.4] - 2026-10-06
 
 ### Changed

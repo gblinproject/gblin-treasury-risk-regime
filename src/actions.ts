@@ -35,6 +35,7 @@ import { CHAINLINK_AGGREGATOR_ABI, ERC20_ABI, GBLIN_ABI, LENS_ABI, ZAP_ABI } fro
 import { getAuctionState } from "./auction.js";
 import { client } from "./client.js";
 import { GBLIN_LENS, GBLIN_VAULT, GBLIN_ZAP, WETH } from "./config.js";
+import { blockAt, timestampOf } from "./blocktime.js";
 import { applySlippageBuffer, checkCooldown, getDynamicSlippage } from "./helpers.js";
 import { ZAP_GAS_LIMIT, appendBuilderCode, toolError, toolResult, venueDataPerRow, withSendCallsFields } from "./shared.js";
 
@@ -42,8 +43,8 @@ import { ZAP_GAS_LIMIT, appendBuilderCode, toolError, toolResult, venueDataPerRo
 
 /** The first block at which the Lens of the vault in service exists: NAV history starts here. */
 const LENS_DEPLOY_BLOCK = 51_563_262n;
-/** Base produces a block every two seconds. */
-const BLOCKS_PER_HOUR = 1_800n;
+/** Seconds between two points of the NAV history. */
+const HISTORY_STEP_SECONDS = { hour: 3_600, day: 86_400 } as const;
 
 /** Public endpoints that serve historical state and eth_simulateV1 (checked on Base mainnet). */
 // Checked on Base mainnet for historical eth_call. Several, because a hosted server reaches some and not
@@ -753,7 +754,7 @@ export async function handleNavHistory(args: unknown) {
   if (!parsed.success) return toolError(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
   const { interval, points } = parsed.data;
   try {
-    const step = interval === "hour" ? BLOCKS_PER_HOUR : BLOCKS_PER_HOUR * 24n;
+    const step = HISTORY_STEP_SECONDS[interval];
     const latest = await historyClient.getBlockNumber();
 
     // The feeds are the vault's own: the WETH oracle, and the oracle of the non-stable, non-WETH row.
@@ -767,18 +768,19 @@ export async function handleNavHistory(args: unknown) {
       if (!r[2] && r[0].toLowerCase() !== WETH.toLowerCase() && !r[7]) btcOracle = r[1];
     }
 
+    // Points are spaced in time, not in blocks, and each one's time follows from its block number
+    // (see blocktime.ts): one multicall per point (NAV and both feeds read at the same block) and no
+    // block header reads, which keeps a request inside the subrequest budget of a hosted Worker as well
+    // as fast on a local server.
+    const latestTime = timestampOf(latest);
     const blocks: bigint[] = [];
-    for (let k = 0n; k < BigInt(points); k++) {
-      const b = latest - k * step;
+    for (let k = 0; k < points; k++) {
+      const b = k === 0 ? latest : BigInt(blockAt(latestTime - k * step));
       if (b < LENS_DEPLOY_BLOCK) break;
-      blocks.unshift(b);
+      blocks.unshift(b > latest ? latest : b);
     }
     const truncated = blocks.length < points;
 
-    // One multicall per point (NAV and both feeds read at the same block), and times derived from the
-    // block number: Base produces exactly one block every two seconds. That keeps a request inside the
-    // subrequest budget of a hosted Worker as well as fast on a local server.
-    const latestBlock = await historyClient.getBlock({ blockNumber: latest });
     const series = [];
     for (const blockNumber of blocks) {
       const contracts = [
@@ -790,7 +792,7 @@ export async function handleNavHistory(args: unknown) {
       const navEthWei = out[0] as bigint;
       const eth = out[1] as readonly [bigint, bigint, bigint, bigint, bigint];
       const btc = (btcOracle ? out[2] : null) as readonly [bigint, bigint, bigint, bigint, bigint] | null;
-      const timestamp = Number(latestBlock.timestamp) - Number(latest - blockNumber) * 2;
+      const timestamp = timestampOf(blockNumber);
       const ethUsd = Number(eth[1]) / 1e8;
       const navEth = Number(formatUnits(navEthWei, 18));
       series.push({

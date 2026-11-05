@@ -46,8 +46,8 @@ function logSources(env) {
   const url = typeof env?.GBLIN_RPC_URL === "string" ? env.GBLIN_RPC_URL.trim() : "";
   return url ? [...LOG_SOURCES, { url, window: PRIVATE_WINDOW }] : [...LOG_SOURCES];
 }
-/** Blocks left behind the head, so a log is stored only once its block is settled. */
-const CONFIRMATIONS = 10;
+/** Blocks left behind the head, so a log is stored only once its block is settled (~20 s at 200 ms blocks). */
+const CONFIRMATIONS = 100;
 /**
  * Endpoints asked only for the chain head when no log source answers it. They serve recent blocks
  * but cap or refuse log ranges, so they never read windows.
@@ -55,15 +55,16 @@ const CONFIRMATIONS = 10;
 const HEAD_SOURCES = ["https://base-rpc.publicnode.com", "https://mainnet.base.org"];
 /**
  * Log reads per run. Workers on the free plan may make 50 subrequests per invocation; this leaves room
- * for the head and timestamp reads. At the private endpoint's 10-block window it still reads more
- * blocks per run than the chain produces in five minutes, so a backlog shrinks on every run.
+ * for the head and timestamp reads. At a public source's window a run reads far more blocks than the
+ * chain produces in five minutes (1,500 at 200 ms blocks). The private endpoint's 10-block window
+ * covers 360 blocks per run, less than that: alone it slows the growth of a backlog but cannot close it.
  */
 const MAX_READS_PER_RUN = 36;
 /** Largest log range the private endpoint (`GBLIN_RPC_URL`) accepts on its plan. */
 const PRIVATE_WINDOW = 10;
 const TIMEOUT_MS = 12_000;
-/** The index counts as current when it is within this many blocks of the head it last saw (~40 min). */
-const SYNCED_LAG_BLOCKS = 1200;
+/** The index counts as current when it is within this many blocks of the head it last saw (~40 min at 200 ms blocks). */
+const SYNCED_LAG_BLOCKS = 12_000;
 /** ...and when its last successful run is at most this old: a stalled run also leaves `head_seen` behind. */
 const SYNCED_MAX_AGE_MS = 40 * 60 * 1000;
 const STATE_NAME = "vault";
