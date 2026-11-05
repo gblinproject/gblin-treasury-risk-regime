@@ -17,8 +17,8 @@
  * anyone from the same logs.
  *
  * BUDGET: one block-number read plus at most MAX_READS_PER_RUN log reads per run, one D1 read and one
- * D1 batch. Once caught up, a run reads the ~150 blocks produced in five minutes: one window from a
- * public source, or fifteen from the private endpoint.
+ * D1 batch. Runs every minute. Once caught up, a run reads the ~300 blocks produced in a minute: one
+ * window from a public source, or thirty from the private endpoint.
  */
 
 export const VAULT = "0xc2181d975c05c8c724b334bcED0764c0b86B1D53";
@@ -56,8 +56,8 @@ const HEAD_SOURCES = ["https://base-rpc.publicnode.com", "https://mainnet.base.o
 /**
  * Log reads per run. Workers on the free plan may make 50 subrequests per invocation; this leaves room
  * for the head and timestamp reads. At a public source's window a run reads far more blocks than the
- * chain produces in five minutes (1,500 at 200 ms blocks). The private endpoint's 10-block window
- * covers 360 blocks per run, less than that: alone it slows the growth of a backlog but cannot close it.
+ * chain produces in a minute (300 at 200 ms blocks). The private endpoint's 10-block window covers 360
+ * blocks per run, a little more than that: alone it keeps the index current and closes a backlog slowly.
  */
 const MAX_READS_PER_RUN = 36;
 /** Largest log range the private endpoint (`GBLIN_RPC_URL`) accepts on its plan. */

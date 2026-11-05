@@ -28,4 +28,4 @@ database_id = "befd24a6-1f21-4cc6-ab54-70e954a8d0dc"
 # Every 10 minutes: promise observation and daily seals. Every minute: the auction order relay.
 # Every 5 minutes: the index of the vault's events (src/vaultevents.mjs).
 [triggers]
-crons = ["*/10 * * * *", "* * * * *", "*/5 * * * *"]
+crons = ["*/10 * * * *", "* * * * *", "*/1 * * * *"]

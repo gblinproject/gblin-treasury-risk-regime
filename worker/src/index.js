@@ -58,7 +58,7 @@ const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // Bumped on EVERY deploy. The authoritative identifier of the surface remains
 // manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.20" };
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.21" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -2011,9 +2011,10 @@ export default {
       ctx.waitUntil(publishAuctionOrders(env, rpcs).catch((e) => console.error("auction publisher:", e && e.message)));
       return;
     }
-    // Every five minutes: extend the index of the vault's events. Its own trigger, so its reads never
-    // share a subrequest budget with the seals below.
-    if (event && event.cron === "*/5 * * * *") {
+    // Every minute, on a trigger of its own: extend the index of the vault's events. The expression
+    // differs from the publisher's above only in form, so each runs as a separate invocation with its
+    // own subrequest budget, and neither shares one with the seals below.
+    if (event && event.cron === "*/1 * * * *") {
       ctx.waitUntil(vaultEventsTick(env).then((r) => { if (r && r.error) console.error("vault events:", r.error); }));
       return;
     }
