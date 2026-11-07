@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2 — 2026-11-06
+
+- `GBLIN_RISK_GATE=false` is accepted only together with the `--allow-risk-gate-off` flag, and every run with the gate disabled prints a warning on stderr. Without the flag the CLI refuses and exits with code 1.
+- A `GBLIN_MAX_EXIT_USDC` or `GBLIN_MAX_PAY_USDC` above its default cap prints a warning on stderr.
+- Dependencies updated: `npm audit` reports no known vulnerabilities.
+
 ## 0.1.1 — 2026-09-27
 
 - The balances reported after a move are read at the block of the last receipt, from an endpoint that has that block. Load-balanced endpoints answer from replicas that can lag a block or two; an unpinned read right after a confirmed exit returned the old USDC balance and `ensureUsdc` reported a failure for an exit that had succeeded. Found on the first mainnet run; the fork test now includes a lagging-replica proxy.

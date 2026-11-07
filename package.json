@@ -1,6 +1,6 @@
 {
   "name": "@gblin-protocol/mcp-server",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "mcpName": "io.github.gblinproject/gblin-treasury-risk-regime",
   "description": "Market risk regime (calm/elevated/crash) and treasury tools for AI agents on Base. Free risk-regime reads, signed EIP-712 risk attestations as portable proof-of-diligence, and JIT swaps to USDC for x402 invoices.",
   "type": "module",
@@ -72,9 +72,9 @@
     "access": "public"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "viem": "^2.21.0",
-    "zod": "^3.23.8"
+    "zod": "^4.6.7"
   },
   "overrides": {
     "ws": ">=8.21.0"

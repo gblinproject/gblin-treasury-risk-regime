@@ -14,7 +14,7 @@ const server = new Server(
 );
 
 const expensiveQueryHandler = requirePayment<{ query: string }>(PRICE, async (args) => {
-  const result = `Processed query: "${args.query}" — this is where your valuable computation goes.`;
+  const result = `Processed query: "${args.query}". Replace this with the tool's own work.`;
   if (AUTO_TREASURY && process.env.RECIPIENT_WALLET) {
     const action = await checkTreasuryAction(process.env.RECIPIENT_WALLET as `0x${string}`);
     if (action.action === 'invest') {
@@ -22,17 +22,17 @@ const expensiveQueryHandler = requirePayment<{ query: string }>(PRICE, async (ar
     }
   }
   return { content: [{ type: 'text' as const, text: result }] };
-});
+}, 'mcp://tool/expensive_query');
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [{
     name: 'expensive_query',
-    description: `A sample paywalled tool. Costs ${PRICE} USDC per call via x402. Include the base64-encoded payment proof in the _payment field.`,
+    description: `A sample paywalled tool. Costs ${PRICE} USDC per call via x402. Pass the base64-encoded x402 payment payload in the _payment field.`,
     inputSchema: {
       type: 'object' as const,
       properties: {
         query: { type: 'string', description: 'Your query' },
-        _payment: { type: 'string', description: 'Base64-encoded x402 payment proof (omit on first call to receive 402 manifest)' },
+        _payment: { type: 'string', description: 'Base64-encoded x402 payment payload (omit it to receive the payment requirements)' },
       },
       required: ['query'],
     },

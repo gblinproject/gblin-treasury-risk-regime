@@ -3,6 +3,24 @@
 All notable changes to `@gblin-protocol/mcp-server` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.6.6] - 2026-11-06
+
+### Changed
+- `gblin-init` writes the policy text bundled in the package and no longer downloads a template, so the
+  instructions added to `AGENTS.md` are exactly those of the installed release. `--dry-run` prints the block.
+- The `AGENTS.md` policy requires the user's explicit confirmation before any mint, redemption or swap, and
+  states that nothing is sent without the user's wallet signature. Its checks are suggestions to present to
+  the user, not standing permission to move funds.
+- Dependencies: `@modelcontextprotocol/sdk` 1.32.2 or later and `zod` 4.6.7 or later, which resolve the
+  published advisories on the previous versions (DNS rebinding protection, cross-origin redirects, zod
+  parsing). `npm audit` reports no known vulnerabilities in the package, the Worker, the paywall template
+  or `@gblin-protocol/agent-treasury`.
+
+### Fixed
+- The paywall template (`examples/mcp-paywall-template`) verifies each x402 payment with the facilitator,
+  settles it before running the tool, rejects a payload already used and fails closed on any facilitator
+  error. It previously checked only the shape and expiry of the proof.
+
 ## [0.6.5] - 2026-11-05
 
 ### Fixed

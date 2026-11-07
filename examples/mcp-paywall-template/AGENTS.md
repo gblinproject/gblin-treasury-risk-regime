@@ -1,19 +1,22 @@
-# Agent Instructions — MCP Paywall Template
+# Agent instructions: MCP paywall template
 
-This is a starter template for an MCP server with x402 paywall.
+This is a starter template for an MCP server with an x402 paywall.
 
 ## Project structure
 
-- `src/index.ts` — MCP server entry point, registers paywalled tools
-- `src/paywall.ts` — x402 payment verification middleware
-- `src/treasury.ts` — optional auto-invest hook into GBLIN
+- `src/index.ts`: MCP server entry point; registers the paid tools.
+- `src/paywall.ts`: x402 payment verification and settlement through the facilitator.
+- `src/treasury.ts`: optional read-only treasury check on the recipient wallet.
 
 ## How to extend
 
-1. Add a new tool in `src/index.ts` with `server.registerTool(...)`
-2. Wrap the tool's handler with `requirePayment(price)` from `src/paywall.ts`
-3. Set environment variables in `.env`
+1. Add a new tool in `src/index.ts`.
+2. Wrap the tool's handler with `requirePayment(price, handler, resource)` from `src/paywall.ts`.
+3. Set the environment variables in `.env`.
 
-## Treasury hook
+## Treasury check
 
-If `GBLIN_AUTO_TREASURY=true`, revenue above $5 USDC will auto-invest into GBLIN every 6 hours. For other treasury options, see the parent `skills/base-agent-treasury` skill.
+If `GBLIN_AUTO_TREASURY=true`, after each paid call the server reads the recipient's USDC balance and,
+above 5 USDC, logs a suggestion to stderr. It does not sign or send transactions: any move of funds
+needs the wallet owner's review and signature. For treasury patterns, see `skills/base-agent-treasury`
+in the parent repository.

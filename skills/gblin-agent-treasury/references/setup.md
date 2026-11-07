@@ -15,7 +15,7 @@ The CLI signs with the agent's own wallet. Nothing is custodied.
 | `GBLIN_MAX_EXIT_USDC` | no | largest single refill (default 50) |
 | `GBLIN_MAX_PAY_USDC` | no | largest x402 payment the client signs (default 1) |
 | `GBLIN_MIN_GAS_ETH` | no | parking is skipped below this ETH balance (default 0.0005) |
-| `GBLIN_RISK_GATE` | no | `false` parks even in a crash regime (default: parking waits) |
+| `GBLIN_RISK_GATE` | no | `false` parks even in a crash regime (default: parking waits); requires the `--allow-risk-gate-off` flag and prints a warning |
 
 The key is read from the environment only. Never echo it and never pass it as an argument.
 

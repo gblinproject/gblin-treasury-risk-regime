@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * gblin-treasury — the treasury from the command line, for agents that run shell commands.
+ * gblin-treasury: the treasury from the command line, for agents that run shell commands.
  *
  *   gblin-treasury status [--json]
  *   gblin-treasury park [--json]
@@ -12,8 +12,10 @@
  *   GBLIN_AGENT_PRIVATE_KEY   hex private key of the agent wallet (required for park, ensure-usdc, pay, run)
  *   GBLIN_AGENT_ADDRESS       address to read for `status` when no key is configured
  *   GBLIN_RPC_URL             preferred Base RPC endpoint (optional)
- *   GBLIN_RESERVE_USDC, GBLIN_MIN_PARK_USDC, GBLIN_MAX_EXIT_USDC, GBLIN_MAX_PAY_USDC, GBLIN_MIN_GAS_ETH,
- *   GBLIN_RISK_GATE=false     policy overrides (optional)
+ *   GBLIN_RESERVE_USDC, GBLIN_MIN_PARK_USDC, GBLIN_MAX_EXIT_USDC, GBLIN_MAX_PAY_USDC, GBLIN_MIN_GAS_ETH
+ *                             policy overrides (optional); a cap raised above its default prints a warning
+ *   GBLIN_RISK_GATE=false     disables the risk gate; accepted only together with --allow-risk-gate-off,
+ *                             and every run prints a warning on stderr
  *
  * Every command prints one JSON object with --json; exit code 0 on success, 1 on a refusal or error.
  */
@@ -27,6 +29,12 @@ import { fromPrivateKey } from "./signer.js";
 import { Treasury, DEFAULT_POLICY, type TreasuryPolicy } from "./treasury.js";
 import { createTreasuryFetch } from "./x402.js";
 
+let allowRiskGateOff = false;
+
+function warn(message: string): void {
+  console.error(`warning: ${message}`);
+}
+
 function policyFromEnv(): Partial<TreasuryPolicy> {
   const num = (k: string) => (process.env[k] !== undefined && process.env[k] !== "" ? Number(process.env[k]) : undefined);
   const p: Partial<TreasuryPolicy> = {};
@@ -35,8 +43,20 @@ function policyFromEnv(): Partial<TreasuryPolicy> {
   const e = num("GBLIN_MAX_EXIT_USDC"); if (e !== undefined) p.maxExitUsdc = e;
   const y = num("GBLIN_MAX_PAY_USDC"); if (y !== undefined) p.maxPayUsdc = y;
   const g = num("GBLIN_MIN_GAS_ETH"); if (g !== undefined) p.minGasEth = g;
-  if (process.env.GBLIN_RISK_GATE === "false") p.riskGate = false;
   for (const [k, v] of Object.entries(p)) if (typeof v === "number" && !Number.isFinite(v)) throw new Error(`Policy value ${k} is not a number.`);
+  if (process.env.GBLIN_RISK_GATE === "false") {
+    if (!allowRiskGateOff) {
+      throw new Error("GBLIN_RISK_GATE=false disables the risk gate. Pass --allow-risk-gate-off to confirm, or unset it.");
+    }
+    p.riskGate = false;
+    warn("the risk gate is disabled: the treasury may park USDC into GBLIN during an elevated or crash regime.");
+  }
+  if (p.maxExitUsdc !== undefined && p.maxExitUsdc > DEFAULT_POLICY.maxExitUsdc) {
+    warn(`GBLIN_MAX_EXIT_USDC=${p.maxExitUsdc} is above the default cap of ${DEFAULT_POLICY.maxExitUsdc} USDC per exit.`);
+  }
+  if (p.maxPayUsdc !== undefined && p.maxPayUsdc > DEFAULT_POLICY.maxPayUsdc) {
+    warn(`GBLIN_MAX_PAY_USDC=${p.maxPayUsdc} is above the default cap of ${DEFAULT_POLICY.maxPayUsdc} USDC per payment.`);
+  }
   return p;
 }
 
@@ -59,13 +79,15 @@ async function main(): Promise<number> {
       method: { type: "string", short: "X" },
       data: { type: "string", short: "d" },
       "max-amount": { type: "string" },
+      "allow-risk-gate-off": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
   });
+  allowRiskGateOff = Boolean(values["allow-risk-gate-off"]);
   const [command, arg] = positionals;
   const json = Boolean(values.json);
   if (values.help || !command) {
-    console.log("usage: gblin-treasury <status|park|ensure-usdc <amount>|pay <url>|run> [--json]");
+    console.log("usage: gblin-treasury <status|park|ensure-usdc <amount>|pay <url>|run> [--json] [--allow-risk-gate-off]");
     return values.help ? 0 : 1;
   }
 

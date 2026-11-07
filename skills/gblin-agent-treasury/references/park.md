@@ -15,7 +15,7 @@ Mints GBLIN with every USDC above the reserve, when the policy allows it. Two tr
 | surplus below the minimum | nothing worth parking |
 | ETH for gas below the floor | ask the user to top up ETH first |
 | the vault reports its NAV as not reliable | a price feed is stale; try later |
-| the market regime is a crash / could not be read | the risk gate is on; try later or set `GBLIN_RISK_GATE=false` on the user's explicit instruction |
+| the market regime is a crash / could not be read | the risk gate is on; try later or set `GBLIN_RISK_GATE=false` with `--allow-risk-gate-off`, only on the user's explicit instruction |
 
 `run` is the same command, for a scheduler (one policy pass).
 
