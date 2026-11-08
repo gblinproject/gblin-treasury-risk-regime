@@ -2,7 +2,7 @@
  * GBLIN MCP over Streamable HTTP — Cloudflare Worker (free plan).
  *
  * WHY THIS EXISTS: the npm server (@gblin-protocol/mcp-server) is stdio-only —
- * hosted agents and URL-based registries (Smithery) need an HTTPS endpoint.
+ * hosted agents and URL-based registries need an HTTPS endpoint.
  * This Worker is the HTTP twin: a STATELESS Streamable HTTP MCP server with
  * the light, free, read-only tools. It sells nothing and holds no keys; the
  * paid data stays on the x402 endpoints (gblin.digital), which this server
@@ -58,7 +58,7 @@ const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // Bumped on EVERY deploy. The authoritative identifier of the surface remains
 // manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.22" };
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.23" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -1098,7 +1098,7 @@ const RELAY_CLAUSE = ", or payments.relay when nobody else will carry it";
 function surfaceInstructions(surface) {
   return surface === "directory" ? BASE_INSTRUCTIONS.replace(RELAY_CLAUSE, "") : BASE_INSTRUCTIONS;
 }
-// Canonical manifest hash (tools + resources), so docs and Smithery can be checked against the live surface.
+// Canonical manifest hash (tools + resources), so docs and registries can be checked against the live surface.
 let MANIFEST_HASH = null;
 async function manifestHash() {
   if (MANIFEST_HASH) return MANIFEST_HASH;
@@ -1124,7 +1124,7 @@ async function metaDoc(env) {
       keyed_for_package_tools: Boolean(globalThis.process && globalThis.process.env && globalThis.process.env.GBLIN_RPC_URL),
     },
     sibling_package: SURFACE_META.sibling_package,
-    docs: { llms_txt: `${SITE}/llms.txt`, smithery: "https://smithery.ai/servers/gblin-protocol/mcp", repo: "https://github.com/gblinproject/gblin-treasury-risk-regime" },
+    docs: { llms_txt: `${SITE}/llms.txt`, repo: "https://github.com/gblinproject/gblin-treasury-risk-regime" },
     audit: SURFACE_META.get_audit_urls,
   };
 }
