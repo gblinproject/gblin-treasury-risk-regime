@@ -1,0 +1,317 @@
+{
+ "witnessKey": "e5fa5114b483e5230b3a3e3d3fbe6904bda7a37811e9bdad73f947eac8d2113f:ff21e87e1928ca58a2b1fdacf01e6b3291d02776fb02d43456f6da3e13c340cf",
+ "witnessPub": "ff21e87e1928ca58a2b1fdacf01e6b3291d02776fb02d43456f6da3e13c340cf",
+ "witnessVkey": "gblin.digital/witness+c7de8a7d+BP8h6H4ZKMpYorH9rPAeazKR0Cd2+wLUNFb22j4Tw0DP",
+ "origin": "example.test/log",
+ "originHash": "27d8983e1c5a983a6e92c70b2c5a5c1342fb8ff88de63a864a1e4ea5070bca8e",
+ "logVkey": "example.test/log+a4828d22+ATKe1pkELzMOaoz9zRdjKBFn9DQnpfsTQ1vTMQI5jbbc",
+ "netcfg": "{\"example.test/log\":{\"addedAt\":\"2000-01-01T00:00:00.000Z\",\"contact\":null,\"list\":\"test\",\"qpd\":null,\"vkey\":\"example.test/log+a4828d22+ATKe1pkELzMOaoz9zRdjKBFn9DQnpfsTQ1vTMQI5jbbc\"}}",
+ "steps": [
+  {
+   "name": "old with leading zero",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 00\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— example.test/log pIKNIuW8Cp71u0GItfz5RqESUr8vwBHmaOPOW9mA3boi2H31bf82FWhIfGfJBCYPbwVVPg2TPcUqeyrOyx5dC5pXkQ0=\n",
+   "status": 400
+  },
+  {
+   "name": "old negative",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old -1\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— example.test/log pIKNIuW8Cp71u0GItfz5RqESUr8vwBHmaOPOW9mA3boi2H31bf82FWhIfGfJBCYPbwVVPg2TPcUqeyrOyx5dC5pXkQ0=\n",
+   "status": 400
+  },
+  {
+   "name": "old missing",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— example.test/log pIKNIuW8Cp71u0GItfz5RqESUr8vwBHmaOPOW9mA3boi2H31bf82FWhIfGfJBCYPbwVVPg2TPcUqeyrOyx5dC5pXkQ0=\n",
+   "status": 400
+  },
+  {
+   "name": "old with plus sign",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old +0\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— example.test/log pIKNIuW8Cp71u0GItfz5RqESUr8vwBHmaOPOW9mA3boi2H31bf82FWhIfGfJBCYPbwVVPg2TPcUqeyrOyx5dC5pXkQ0=\n",
+   "status": 400
+  },
+  {
+   "name": "no blank line",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 0\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n— example.test/log pIKNIuW8Cp71u0GItfz5RqESUr8vwBHmaOPOW9mA3boi2H31bf82FWhIfGfJBCYPbwVVPg2TPcUqeyrOyx5dC5pXkQ0=\n",
+   "status": 400
+  },
+  {
+   "name": "64 proof lines",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 0\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— example.test/log pIKNIuW8Cp71u0GItfz5RqESUr8vwBHmaOPOW9mA3boi2H31bf82FWhIfGfJBCYPbwVVPg2TPcUqeyrOyx5dC5pXkQ0=\n",
+   "status": 400
+  },
+  {
+   "name": "non-canonical base64 proof line",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 0\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB=\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— example.test/log pIKNIuW8Cp71u0GItfz5RqESUr8vwBHmaOPOW9mA3boi2H31bf82FWhIfGfJBCYPbwVVPg2TPcUqeyrOyx5dC5pXkQ0=\n",
+   "status": 400
+  },
+  {
+   "name": "31-byte proof line",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 0\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— example.test/log pIKNIuW8Cp71u0GItfz5RqESUr8vwBHmaOPOW9mA3boi2H31bf82FWhIfGfJBCYPbwVVPg2TPcUqeyrOyx5dC5pXkQ0=\n",
+   "status": 400
+  },
+  {
+   "name": "unpadded proof line",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 0\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— example.test/log pIKNIuW8Cp71u0GItfz5RqESUr8vwBHmaOPOW9mA3boi2H31bf82FWhIfGfJBCYPbwVVPg2TPcUqeyrOyx5dC5pXkQ0=\n",
+   "status": 400
+  },
+  {
+   "name": "size with leading zero",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 0\n\nexample.test/log\n05\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— example.test/log pIKNIlX9Yi/yChn8QEriMIhcuU6EROM3X7HTfmh6o45onCNsZtyrEOV6OE09RCCnvNsuPxLfD28ybOAfjZzlzFakgg8=\n",
+   "status": 400
+  },
+  {
+   "name": "non-canonical root",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 0\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoX=\n\n— example.test/log pIKNItnXZSywcxRczjsF+sHDK6FtMiYaTnJ93GwzYrRs+1kdpKdAF20bQ6hsluULbwJimlQh84UoPMJVKC+IZqSmngA=\n",
+   "status": 400
+  },
+  {
+   "name": "checkpoint without final newline",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 0\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— example.test/log pIKNIuW8Cp71u0GItfz5RqESUr8vwBHmaOPOW9mA3boi2H31bf82FWhIfGfJBCYPbwVVPg2TPcUqeyrOyx5dC5pXkQ0=",
+   "status": 400
+  },
+  {
+   "name": "extension line added after signing",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 0\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\next\n\n— example.test/log pIKNIuW8Cp71u0GItfz5RqESUr8vwBHmaOPOW9mA3boi2H31bf82FWhIfGfJBCYPbwVVPg2TPcUqeyrOyx5dC5pXkQ0=\n",
+   "status": 403
+  },
+  {
+   "name": "unknown origin",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 0\n\nother.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— other.test/log iifUWckrdbVpJTJcrEvbx6rZxRu2zS5f540yUrL92ThU75VROSmCOGqKK9TcASR5wyncuwRU5zRpX+dB3TF2QxK9YgM=\n",
+   "status": 404
+  },
+  {
+   "name": "only a rogue key with the same name",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 0\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— example.test/log peNeBAnnot6Hs0ZnPogWFTJmbzl2zc0byjigPL878xeKo7XlVsEIhqCx/0WRdUxmaVrROlOHEGptPnYNJgIWetQi8wI=\n",
+   "status": 403
+  },
+  {
+   "name": "only a foreign key",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 0\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— foreign.test/witness JlCY5q2hrpRuNpo105II2zG+eGpX3LUoze6U+CPlyEnw0q5HFyjDthGk6NQlRGhe3e8mX/M6rXsx0ytcJNnLK9EUNQE=\n",
+   "status": 403
+  },
+  {
+   "name": "trusted key line that fails to verify",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 0\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— example.test/log pIKNIuW8Cp71u0GItfz5RqESUr8vwBHmaOPOW9mA3boi2H31bf82FWhIfGfJBCYPbwVVPg2TPcUqeyrOyx5dC5pXkQ0=\n— example.test/log pIKNIuW8Cp71u0CItfz5RqESUr8vwBHmaOPOW9mA3boi2H31bf82FWhIfGfJBCYPbwVVPg2TPcUqeyrOyx5dC5pXkQ0=\n",
+   "status": 403
+  },
+  {
+   "name": "old larger than size",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 5\n\nexample.test/log\n3\nz3Y6BByBzu8VeKYIP3XGG+8uABTyo+aDqX/Pylvn8Zo=\n\n— example.test/log pIKNIkRi3wRm+vZ0i+uGMUmOEGsv9S8+aK1tTRW4rqUO8Jev41yFv1l8K6dZtsXTFXGEL2/gc6rTHgUdEkzQ8CCgIwo=\n",
+   "status": 400
+  },
+  {
+   "name": "old differs from held size (none held)",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 3\n/KifV8n4yOtAR6f/nTM6z54PM4SyCyVbzqsPIW3Momc=\n92g2MlrsVpnY1x+OQunUfFwpsIBZuiljhPfKQK06QK4=\nYKU+7Q3oepDI5ZQnxZxGJTwzp2oJUCpRgBMAknt+a9w=\n6p/BobbhkbRg0NYwbj6HDBc/OTMPE82htwz8cr3DmLo=\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— example.test/log pIKNIuW8Cp71u0GItfz5RqESUr8vwBHmaOPOW9mA3boi2H31bf82FWhIfGfJBCYPbwVVPg2TPcUqeyrOyx5dC5pXkQ0=\n",
+   "status": 409,
+   "expectBody": "0\n",
+   "expectType": "text/x.tlog.size"
+  },
+  {
+   "name": "size 0 with non-empty root",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 0\n\nexample.test/log\n0\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— example.test/log pIKNIrzaVCBMd9LBijdV6GP1hpcEvosYpZ73H7M53GDmQ07O5hS7vpj1vTHxfPkfkffTmLPDd91Ckl6A56Xq1RiwoAA=\n",
+   "status": 422
+  },
+  {
+   "name": "proof with old 0",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 0\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— example.test/log pIKNIuW8Cp71u0GItfz5RqESUr8vwBHmaOPOW9mA3boi2H31bf82FWhIfGfJBCYPbwVVPg2TPcUqeyrOyx5dC5pXkQ0=\n",
+   "status": 422
+  },
+  {
+   "name": "size 0 with empty root",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 0\n\nexample.test/log\n0\n47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=\n\n— example.test/log pIKNIv/nqpXUhkfDmCUft+cGiqxG95mt+YqvB0elmQEMoeXuGMRwPT3+XEctLBMc4H8Gvk3NBAMqqPcdyIBjBh37XwU=\n",
+   "status": 200,
+   "cosignedText": "example.test/log\n0\n47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=\n"
+  },
+  {
+   "name": "monitoring after size 0",
+   "method": "GET",
+   "path": "/witness/27d8983e1c5a983a6e92c70b2c5a5c1342fb8ff88de63a864a1e4ea5070bca8e/checkpoint",
+   "status": 200
+  },
+  {
+   "name": "first checkpoint size 5",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 0\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— example.test/log pIKNIuW8Cp71u0GItfz5RqESUr8vwBHmaOPOW9mA3boi2H31bf82FWhIfGfJBCYPbwVVPg2TPcUqeyrOyx5dC5pXkQ0=\n",
+   "status": 200,
+   "cosignedText": "example.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n"
+  },
+  {
+   "name": "stale old 0",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 0\n\nexample.test/log\n7\nCwB/uRXrmyoUb1SxyG7FO2ZPjkVbdmCwtu4T7cDZIcA=\n\n— example.test/log pIKNIgx2VRCeEuTRtLATYhmtPESkVvzDwGW88/ONXTUHbN2/aHrofV9Plm/Wv2xCmb8O10wQjijUG2XrZyewsexGTAA=\n",
+   "status": 409,
+   "expectBody": "5\n",
+   "expectType": "text/x.tlog.size"
+  },
+  {
+   "name": "wrong proof (5-\u003e8 sent for 5-\u003e7)",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 5\n6p/BobbhkbRg0NYwbj6HDBc/OTMPE82htwz8cr3DmLo=\njxWTy5L0Kdk0C5u8HwuxIq34AmxCpKQhQuIWiTFycjY=\nOY6960bhee7/rO9GNf0wQQlU4Wm4jiJ0H6ls/7ECKoU=\nvdHF/1WxnLaw58dhv5psyqJ/u/wHt08fq7bpEaC9KrM=\n\nexample.test/log\n7\nCwB/uRXrmyoUb1SxyG7FO2ZPjkVbdmCwtu4T7cDZIcA=\n\n— example.test/log pIKNIgx2VRCeEuTRtLATYhmtPESkVvzDwGW88/ONXTUHbN2/aHrofV9Plm/Wv2xCmb8O10wQjijUG2XrZyewsexGTAA=\n",
+   "status": 422
+  },
+  {
+   "name": "truncated proof",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 5\n6p/BobbhkbRg0NYwbj6HDBc/OTMPE82htwz8cr3DmLo=\njxWTy5L0Kdk0C5u8HwuxIq34AmxCpKQhQuIWiTFycjY=\nZ283gvWzpftDcO1JVyztxSP0pmMiJpyF8q8FCdF7Ck0=\n\nexample.test/log\n7\nCwB/uRXrmyoUb1SxyG7FO2ZPjkVbdmCwtu4T7cDZIcA=\n\n— example.test/log pIKNIgx2VRCeEuTRtLATYhmtPESkVvzDwGW88/ONXTUHbN2/aHrofV9Plm/Wv2xCmb8O10wQjijUG2XrZyewsexGTAA=\n",
+   "status": 422
+  },
+  {
+   "name": "empty proof for growth",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 5\n\nexample.test/log\n7\nCwB/uRXrmyoUb1SxyG7FO2ZPjkVbdmCwtu4T7cDZIcA=\n\n— example.test/log pIKNIgx2VRCeEuTRtLATYhmtPESkVvzDwGW88/ONXTUHbN2/aHrofV9Plm/Wv2xCmb8O10wQjijUG2XrZyewsexGTAA=\n",
+   "status": 422
+  },
+  {
+   "name": "extra proof line",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 5\n6p/BobbhkbRg0NYwbj6HDBc/OTMPE82htwz8cr3DmLo=\njxWTy5L0Kdk0C5u8HwuxIq34AmxCpKQhQuIWiTFycjY=\nZ283gvWzpftDcO1JVyztxSP0pmMiJpyF8q8FCdF7Ck0=\nvdHF/1WxnLaw58dhv5psyqJ/u/wHt08fq7bpEaC9KrM=\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n\nexample.test/log\n7\nCwB/uRXrmyoUb1SxyG7FO2ZPjkVbdmCwtu4T7cDZIcA=\n\n— example.test/log pIKNIgx2VRCeEuTRtLATYhmtPESkVvzDwGW88/ONXTUHbN2/aHrofV9Plm/Wv2xCmb8O10wQjijUG2XrZyewsexGTAA=\n",
+   "status": 422
+  },
+  {
+   "name": "same size, different root (fork)",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 5\n\nexample.test/log\n5\nyv2N6X84aPu/jd1xVPmtkWAzMDJSZEQz6cU9wYzPRZw=\n\n— example.test/log pIKNImAbdFx8u1wr680pdRKXPt3OnKQe//sOhW+/fRPRkPpms0x1ZCP8DHmvaqmUYV3t5QBRBJ/EpdcNdW7Y5Vqvhgo=\n",
+   "status": 422
+  },
+  {
+   "name": "same size, same root, non-empty proof",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 5\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— example.test/log pIKNIuW8Cp71u0GItfz5RqESUr8vwBHmaOPOW9mA3boi2H31bf82FWhIfGfJBCYPbwVVPg2TPcUqeyrOyx5dC5pXkQ0=\n",
+   "status": 422
+  },
+  {
+   "name": "same size, same root",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 5\n\nexample.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n\n— example.test/log pIKNIuW8Cp71u0GItfz5RqESUr8vwBHmaOPOW9mA3boi2H31bf82FWhIfGfJBCYPbwVVPg2TPcUqeyrOyx5dC5pXkQ0=\n",
+   "status": 200,
+   "cosignedText": "example.test/log\n5\nANIYKaVQMUU0irz3ElE+rPKidCEa2D6XAgK7W22AsoY=\n"
+  },
+  {
+   "name": "growth 5 -\u003e 7",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 5\n6p/BobbhkbRg0NYwbj6HDBc/OTMPE82htwz8cr3DmLo=\njxWTy5L0Kdk0C5u8HwuxIq34AmxCpKQhQuIWiTFycjY=\nZ283gvWzpftDcO1JVyztxSP0pmMiJpyF8q8FCdF7Ck0=\nvdHF/1WxnLaw58dhv5psyqJ/u/wHt08fq7bpEaC9KrM=\n\nexample.test/log\n7\nCwB/uRXrmyoUb1SxyG7FO2ZPjkVbdmCwtu4T7cDZIcA=\n\n— example.test/log pIKNIgx2VRCeEuTRtLATYhmtPESkVvzDwGW88/ONXTUHbN2/aHrofV9Plm/Wv2xCmb8O10wQjijUG2XrZyewsexGTAA=\n",
+   "status": 200,
+   "cosignedText": "example.test/log\n7\nCwB/uRXrmyoUb1SxyG7FO2ZPjkVbdmCwtu4T7cDZIcA=\n"
+  },
+  {
+   "name": "growth 7 -\u003e 8",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 7\nZ283gvWzpftDcO1JVyztxSP0pmMiJpyF8q8FCdF7Ck0=\nBgJCaSkJAkIx0FDF1ENBRrp32jItRQKG9XfJ+VFhXVM=\nmFu102uSeACHaHHaklp+gqvoOp3bpYgpIKAHpV6is3Y=\nvdHF/1WxnLaw58dhv5psyqJ/u/wHt08fq7bpEaC9KrM=\n\nexample.test/log\n8\nymt7PmdKyGwQJ7Wch8Bk/DvCezEylMdfg70F/dE/Dc8=\n\n— example.test/log pIKNIpR7ukqgNL8aVAsL+5l34GV3egSl1yGKcTx+EK8VOkvJdxxEkXrn3eUg3cAhNAkN15ZC3VMlb0hJag8EB9CH4wk=\n",
+   "status": 200,
+   "cosignedText": "example.test/log\n8\nymt7PmdKyGwQJ7Wch8Bk/DvCezEylMdfg70F/dE/Dc8=\n"
+  },
+  {
+   "name": "growth 8 -\u003e 13 (old is a power of two)",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 8\n0LdDhSa4DYLPUcCWqLZaLBnAngz/lEGdQjYr6UrsW2Q=\n\nexample.test/log\n13\nqO9IRMjh1bpJyBHNuG6VeR9dMsp9lwmv2ij99l6UmlM=\n\n— example.test/log pIKNIsS7PzUSq4/G0Fg92N+5vId2pQetbCUrTllMKfeN0WSG2MAofT9ZdKcJLh4zvXGNOFecWOCdodHnpotREq1+rgI=\n",
+   "status": 200,
+   "cosignedText": "example.test/log\n13\nqO9IRMjh1bpJyBHNuG6VeR9dMsp9lwmv2ij99l6UmlM=\n"
+  },
+  {
+   "name": "growth 13 -\u003e 20 with extension lines and a foreign signature",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 13\ndGX0we8bo3ucs6UWbPoa4+yJUS73OjLlG2K470uV18A=\n1ewfpe/U8+P8s6kaAeuPO8j7mhVkZyduGYNwvRHTvrM=\n1v0A5NFwDBoh8J7/pkBOxVitbyUcu0E4uXJprlUvxVY=\n/uk491lAEt+bfOPjYAoJcGoq25K/e3O5Oo3ZK4vlooA=\nymt7PmdKyGwQJ7Wch8Bk/DvCezEylMdfg70F/dE/Dc8=\nz7Bew/NkyIF0at1zhEejNXrZzNNpFT5v02ZaWjljue8=\n\nexample.test/log\n20\niVEDVq7oDLPP2VR/HfmNlvJbXXTcH5pvGZhTEBTnAQk=\nextension line one\next-2\n\n— example.test/log pIKNIgvgwNYdQFJxkvkfF+3rfFH15O0AWYCzHOJOcE0rxuOO3a4+gpw1ezdo2XfuEPaLtpsaVTptIUWy/HTqmT+fvQw=\n— foreign.test/witness JlCY5pE3J85WxS19qLccFENaUreOSK4BsFiVVUOZh12wRV08GL8voMZSN7NVrCjiALJatfBhUzIq9mFebIs8icvEmQU=\n",
+   "status": 200,
+   "cosignedText": "example.test/log\n20\niVEDVq7oDLPP2VR/HfmNlvJbXXTcH5pvGZhTEBTnAQk=\nextension line one\next-2\n"
+  },
+  {
+   "name": "rollback attempt 20 -\u003e 13",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 20\n\nexample.test/log\n13\nqO9IRMjh1bpJyBHNuG6VeR9dMsp9lwmv2ij99l6UmlM=\n\n— example.test/log pIKNIsS7PzUSq4/G0Fg92N+5vId2pQetbCUrTllMKfeN0WSG2MAofT9ZdKcJLh4zvXGNOFecWOCdodHnpotREq1+rgI=\n",
+   "status": 400
+  },
+  {
+   "name": "old 13 after 20 is held",
+   "method": "POST",
+   "path": "/witness/add-checkpoint",
+   "body": "old 13\ndGX0we8bo3ucs6UWbPoa4+yJUS73OjLlG2K470uV18A=\n1ewfpe/U8+P8s6kaAeuPO8j7mhVkZyduGYNwvRHTvrM=\n1v0A5NFwDBoh8J7/pkBOxVitbyUcu0E4uXJprlUvxVY=\n/uk491lAEt+bfOPjYAoJcGoq25K/e3O5Oo3ZK4vlooA=\nymt7PmdKyGwQJ7Wch8Bk/DvCezEylMdfg70F/dE/Dc8=\nz7Bew/NkyIF0at1zhEejNXrZzNNpFT5v02ZaWjljue8=\n\nexample.test/log\n20\niVEDVq7oDLPP2VR/HfmNlvJbXXTcH5pvGZhTEBTnAQk=\nextension line one\next-2\n\n— example.test/log pIKNIgvgwNYdQFJxkvkfF+3rfFH15O0AWYCzHOJOcE0rxuOO3a4+gpw1ezdo2XfuEPaLtpsaVTptIUWy/HTqmT+fvQw=\n— foreign.test/witness JlCY5pE3J85WxS19qLccFENaUreOSK4BsFiVVUOZh12wRV08GL8voMZSN7NVrCjiALJatfBhUzIq9mFebIs8icvEmQU=\n",
+   "status": 409,
+   "expectBody": "20\n",
+   "expectType": "text/x.tlog.size"
+  },
+  {
+   "name": "monitoring endpoint",
+   "method": "GET",
+   "path": "/witness/27d8983e1c5a983a6e92c70b2c5a5c1342fb8ff88de63a864a1e4ea5070bca8e/checkpoint",
+   "status": 200,
+   "expectSize": 20
+  },
+  {
+   "name": "monitoring endpoint, unknown origin",
+   "method": "GET",
+   "path": "/witness/abababababababababababababababababababababababababababababababab/checkpoint",
+   "status": 404
+  }
+ ],
+ "raceOld": 20,
+ "raceBodies": [
+  "old 20\nz7Bew/NkyIF0at1zhEejNXrZzNNpFT5v02ZaWjljue8=\nycefRfcPjAOaTpLzbOngyFIeHP07BuVAVVM8JvW/U9w=\ny6Op/vrMx0gNlFd6c4oiuZ07fe06IYpWKLTFyPd7h6c=\n\nexample.test/log\n21\nlrKvg0p8C5GibQua/hgKiPq//Nda2fYvXM9Q//taa4I=\n\n— example.test/log pIKNImeK1i89hBzAIpeH/VBVnBAztjpiOvsM/lJbE0IaVXLoJqdgOYYxnG293VhAvSV2t7y8DREhSXse94cfTWOD+w0=\n",
+  "old 20\nz7Bew/NkyIF0at1zhEejNXrZzNNpFT5v02ZaWjljue8=\nXGD7WjZEH6m1rEQwjZwv4Md1B4P4i/mDAbl26JtVdVg=\n9uaBs9VZVU+Fa8QFd9AWqAV6PARfH8MP+zjuW7v6q9o=\ny6Op/vrMx0gNlFd6c4oiuZ07fe06IYpWKLTFyPd7h6c=\n\nexample.test/log\n25\njd6fRca3f6b5jSmEHiMU6QCdImFQIg3nfGTzRFxxXbM=\n\n— example.test/log pIKNImIOQNsuCRWD2OUywzJ0nv8UQZfFXc8ALxhlH1HaP+O79DLT4uBRCPtHjsaX8cbe2iMj0AVNUuus7ZWKrIP7AAQ=\n",
+  "old 20\nz7Bew/NkyIF0at1zhEejNXrZzNNpFT5v02ZaWjljue8=\nXGD7WjZEH6m1rEQwjZwv4Md1B4P4i/mDAbl26JtVdVg=\n3n4w3//FRd8P3jDpQHA1/EK+bE5hvR6aDTcOe1hUUNA=\ny6Op/vrMx0gNlFd6c4oiuZ07fe06IYpWKLTFyPd7h6c=\n\nexample.test/log\n30\nG1dfkmpxwy+PLajcLVqAgcawntnGG/wIdZ2lMMIhj4o=\n\n— example.test/log pIKNIs8RFR+TaXrm40lCqVqPsX5AxjSQpxNqgaW9KB7blSnJ7hqJGyrT3+uSG9G/O/4X78aBHHyL9NllHcwP33MUPAo=\n",
+  "old 20\nz7Bew/NkyIF0at1zhEejNXrZzNNpFT5v02ZaWjljue8=\nXGD7WjZEH6m1rEQwjZwv4Md1B4P4i/mDAbl26JtVdVg=\na7RXurDg2qEPjIwLAlhnBqee9paIExfq8iN8nWttBdk=\ny6Op/vrMx0gNlFd6c4oiuZ07fe06IYpWKLTFyPd7h6c=\n2GfIXuoFdmGHOOsPmcnT9L7uFijt12Y+GJrVXEDWpEk=\n\nexample.test/log\n33\nIpJPoPy4rDuGdalxmgIShfxiKzzt3dTrVwnqno8lY+k=\n\n— example.test/log pIKNIoFwoSeNWAyj8odos8z+zl1Dtzqalyngx2MB4WCnQ/1ots2blKdGpbas/GaOwYfUbv58me6/fqpBNzzTXwpdUAs=\n",
+  "old 20\nz7Bew/NkyIF0at1zhEejNXrZzNNpFT5v02ZaWjljue8=\nXGD7WjZEH6m1rEQwjZwv4Md1B4P4i/mDAbl26JtVdVg=\na7RXurDg2qEPjIwLAlhnBqee9paIExfq8iN8nWttBdk=\ny6Op/vrMx0gNlFd6c4oiuZ07fe06IYpWKLTFyPd7h6c=\nJwFeqDeV2/IOnuq/Y7eP0b1G0POn6d/SHExTFKzlZek=\n\nexample.test/log\n40\n0hutPWwdlnFGZTUNYrz/UgWwalxX30V4HmiTirQtvqg=\n\n— example.test/log pIKNIkl1+NPnd+wVpvlxzFtVr9oUyw0ytShYWGURg8sqQcNBI8GUUmVfELDJ0Np8cBIhM2bY2zf4zFx6YLcoGQHUMQM=\n"
+ ],
+ "raceSizes": [
+  21,
+  25,
+  30,
+  33,
+  40
+ ]
+}

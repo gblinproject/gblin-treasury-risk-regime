@@ -33,7 +33,7 @@ import { vaultEventsTick, vaultMints, vaultAuctionFills } from "./vaultevents.mj
 // logs (C2SP tlog-cosignature v1). Cost is one read plus one signature per tick,
 // with no chain access at all. Without the WITNESS_KEY secret the feature stays
 // off silently (fail-safe).
-import { witnessTick, witnessIndex, witnessLatestNote, witnessAddCheckpoint, witnessHistory, witnessDiscoverLogs, witnessConfiguredLogs, WITNESSED_LOGS } from "./witness.mjs";
+import { witnessTick, witnessIndex, witnessLatestNote, witnessAddCheckpoint, witnessHistory, witnessDiscoverLogs, witnessConfiguredLogs, witnessCheckpointByOriginHash, WITNESSED_LOGS } from "./witness.mjs";
 import { x402StaticChallenge } from "./x402-challenge.mjs";
 import { BRIDGED_TOOLS, BRIDGED_ALIASES, isBridged, callBridged } from "./stdio-tools.mjs";
 import { SEARCH_TOOL, FETCH_TOOL, searchDocuments, fetchDocument } from "./docsearch.mjs";
@@ -58,7 +58,7 @@ const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // Bumped on EVERY deploy. The authoritative identifier of the surface remains
 // manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.23" };
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.24" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -1883,10 +1883,13 @@ export default {
     // Witness — public index (verifier key, latest cosigned checkpoint per log) and the
     // cosigned note in plain text, in the format any C2SP verifier reads.
     if (url.pathname === "/witness/add-checkpoint" && request.method === "POST") {
-      const bodyText = await request.text();
-      if (bodyText.length > 65536) return new Response("too large\n", { status: 413 });
+      const raw = new Uint8Array(await request.arrayBuffer());
+      if (raw.length > 65536) return new Response("request too large\n", { status: 413, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
+      let bodyText;
+      try { bodyText = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(raw); }
+      catch { return new Response("malformed request: not valid UTF-8\n", { status: 400, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } }); }
       const r = await witnessAddCheckpoint(env, bodyText);
-      return new Response(r.body, { status: r.status, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
+      return new Response(r.body, { status: r.status, headers: { "content-type": r.type || "text/plain; charset=utf-8", "cache-control": "no-store" } });
     }
     if (url.pathname === "/auction/publisher" && request.method === "GET") {
       const rpcs = env.GBLIN_RPC_URL ? [env.GBLIN_RPC_URL, ...FALLBACK_RPCS] : FALLBACK_RPCS;
@@ -1898,6 +1901,12 @@ export default {
     if (url.pathname.startsWith("/witness/") && request.method === "GET") {
       const parts = url.pathname.slice("/witness/".length).replace(/\/$/, "").split("/");
       const id = parts[0];
+      // c2sp.org/tlog-witness monitoring endpoint, keyed by the SHA-256 of the origin.
+      if (parts.length === 2 && parts[1] === "checkpoint" && /^[0-9a-f]{64}$/.test(id)) {
+        const cosigned = await witnessCheckpointByOriginHash(env, id);
+        if (!cosigned) return new Response("not found\n", { status: 404, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=60", ...CORS } });
+        return new Response(cosigned, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=60", ...CORS } });
+      }
       const netCfg = await witnessConfiguredLogs(env);
       const known = WITNESSED_LOGS.some((l) => l.id === id) || Object.keys(netCfg).some((o) => "net:" + o === id || o === id);
       if (!known) return json({ error: "unknown log" }, 404);
