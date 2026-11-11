@@ -58,7 +58,7 @@ const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // Bumped on EVERY deploy. The authoritative identifier of the surface remains
 // manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.24" };
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.25" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -1777,7 +1777,7 @@ export default {
         seal_demo: "POST /v1/seal-demo (5/day/IP, marked demo:true)",
         read: "GET /v1/receipt/:index (free forever) · GET /log/proof/:index · GET /log/checkpoint",
         explorer: "GET /receipt/:index (human page)",
-        for_witnesses: "GET /log/checkpoint (C2SP signed note) · GET /log/consistency?old=<m>&new=<n> (RFC 6962 append-only proof) · GET /log/leaves?start=&end= (raw records, recompute the tree yourself) · GET /log/proof/<i> (inclusion) · GET /log/witnesses (who cosigns, and how to join). We also push our checkpoints with c2sp.org/tlog-witness (POST add-checkpoint) to any witness that configures our origin. One witness cosigns today (markovianprotocol.com/witness); more are welcome.",
+        for_witnesses: "GET /log/checkpoint (C2SP signed note) · GET /log/consistency?old=<m>&new=<n> (RFC 6962 append-only proof) · GET /log/leaves?start=&end= (raw records, recompute the tree yourself) · GET /log/proof/<i> (inclusion) · GET /log/witnesses (who cosigns, and how to join). We also push our checkpoints with c2sp.org/tlog-witness (POST add-checkpoint) to any witness that configures our origin. Two witnesses cosign today (markovianprotocol.com/witness, xguardgate.com/witness); more are welcome.",
         anchor: "tree root anchored daily on Base via EAS (schema " + "0x9f433a96..., promiseId keccak256('gblin-receipts-log'))",
         offline_verifier: "verify-receipt.mjs in github.com/gblinproject/gblin-treasury-risk-regime (zero deps)",
         design_note: "https://github.com/gblinproject/gblin-treasury-risk-regime/blob/main/docs/ai-action-transparency-log.md — what a receipt proves and what it does not, wire formats, and the honest scale of this log",

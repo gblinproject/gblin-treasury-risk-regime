@@ -223,6 +223,12 @@ export const WITNESSES = [
     url: "https://witness.markovianprotocol.com/add-checkpoint",
     vkey: "markovianprotocol.com/witness+41b8827f+BJKLl8rBYM0oUxSaWh9rjTldTprEpYj/SWVIGgacA9XC",
   },
+  {
+    id: "xguard",
+    name: "xguardgate.com/witness",
+    url: "https://api.xguardgate.com/witness/add-checkpoint",
+    vkey: "xguardgate.com/witness+4cbdcb41+BGR+T6u+czYHsxrFwXaOkfMFlzoAFNeHmYmSbwBlqY2Q",
+  },
 ];
 const ckey = (id) => `rlog:cosign:${id}`;
 
@@ -248,12 +254,14 @@ export async function witnessState(env) {
 }
 
 // Which size does a witness hold for THIS log? The c2sp convention exposes the cosigned note
-// under sha256(origin) in lowercase hex: read it and take the size from it.
+// under sha256(origin) in lowercase hex, next to the add-checkpoint endpoint: read it and take
+// the size from it.
 async function witnessHeldSize(w, fetchImpl = fetch) {
   try {
     const h = new Uint8Array(await crypto.subtle.digest("SHA-256", te.encode(RLOG_ORIGIN)));
     const hex = [...h].map((b) => b.toString(16).padStart(2, "0")).join("");
-    const base = new URL(w.url); base.pathname = `/${hex}/checkpoint`;
+    const base = new URL(w.url);
+    base.pathname = base.pathname.replace(/\/?add-checkpoint\/?$/, "") + `/${hex}/checkpoint`;
     const res = await fetchImpl(base.toString());
     if (res.status !== 200) return null;
     const n = Number((await res.text()).split("\n")[1]);
