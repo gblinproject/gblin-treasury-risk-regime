@@ -35,6 +35,7 @@ import { vaultEventsTick, vaultMints, vaultAuctionFills } from "./vaultevents.mj
 // off silently (fail-safe).
 import { witnessTick, witnessIndex, witnessLatestNote, witnessAddCheckpoint, witnessHistory, witnessDiscoverLogs, witnessConfiguredLogs, witnessCheckpointByOriginHash, WITNESSED_LOGS } from "./witness.mjs";
 import { x402StaticChallenge } from "./x402-challenge.mjs";
+import { isCanaryPath, x402Canary } from "./x402canary.mjs";
 import { BRIDGED_TOOLS, BRIDGED_ALIASES, isBridged, callBridged } from "./stdio-tools.mjs";
 import { SEARCH_TOOL, FETCH_TOOL, searchDocuments, fetchDocument } from "./docsearch.mjs";
 import { incidentFor, incidentResponse } from "./incidents.mjs";
@@ -58,7 +59,7 @@ const SITE = "https://gblin.digital";
 const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 // Bumped on EVERY deploy. The authoritative identifier of the surface remains
 // manifest_hash in /meta.
-const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.25" };
+const SERVER_INFO = { name: "gblin-mcp-http", version: "0.13.26" };
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -1549,6 +1550,9 @@ export default {
     const forwarded = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim();
     const ip = (viaProxy && forwarded) || request.headers.get("cf-connecting-ip") || "unknown";
     if (rateLimited(ip)) return json({ error: "rate limited (60 req/min)" }, 429);
+
+    // Facilitator compatibility canary (see x402canary.mjs): verifies only, never settles.
+    if (isCanaryPath(url.pathname) && request.method !== "HEAD") return x402Canary(request);
 
     // Info page for humans/probes at the root.
     if (url.pathname === "/" && request.method === "GET") {
